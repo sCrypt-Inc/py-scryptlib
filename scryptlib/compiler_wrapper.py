@@ -1,4 +1,5 @@
 import re
+import json
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -53,6 +54,34 @@ class InternalError(Exception):
     pass
 
 
+class CompilerResult:
+    def __init__(self,
+            asm=[],
+            ast=None,
+            dep_ast=None,
+            abi=None,
+            warnings=[],
+            compiler_version=None,
+            contract=None,
+            md5=None,
+            structs=None,
+            alias=None,
+            source_file=None,
+            auto_typed_vars=[]):
+        self.asm = asm
+        self.ast = ast
+        self.dep_ast = dep_ast
+        self.abi = abi
+        self.warnings = warnings
+        self.compiler_version = compiler_version
+        self.contract = contract
+        self.md5 = md5
+        self.structs = structs
+        self.alias = alias
+        self.source_file = source_file
+        self.auto_typed_vars = auto_typed_vars
+
+
 def compile(source, **kwargs):
     asm = True
     debug = True
@@ -64,7 +93,9 @@ def compile(source, **kwargs):
     out_files = dict()
     cmd_args = None
     from_file = isinstance(source, Path)
+    source_prefix = source.stem if from_file else 'stdin'
     cwd = Path('.')
+
 
     if 'asm' in kwargs:
         asm = kwargs['asm']
@@ -85,7 +116,7 @@ def compile(source, **kwargs):
 
     if not 'out_dir' in kwargs:
         raise Exception('Missing argument "out_dir". No output directory specified.')
-    out_dir = kwargs['out_dir']
+    out_dir = Path(kwargs['out_dir'])
 
     if not 'compiler_bin' in kwargs:
         raise Exception('Missing argument "compiler_bin". Path to compiler not specified.')
@@ -127,9 +158,17 @@ def compile(source, **kwargs):
     # Collect warnings from compiler output.
     warnings = __get_warnings(res)
 
-    # TODO
+    out_files = dict()
+    if ast or desc:
+        out_file_ast = out_dir / '{}_ast.json'.format(source_prefix)
+        out_files['ast'] = out_file_ast
+        with open(out_file_ast, 'r', encoding='utf-8') as f:
+            ast_obj = json.load(f)
+
 
 def __check_for_errors(compiler_output):
+    # TODO: missing output folder: 
+    # "scryptc: /tmp/scryptlib/stdin_asm.json: openFile: does not exist (No such file or directory)"
     if compiler_output.startswith('Error:'):
         match = re.search(INTERNAL_ERR_REG, compiler_output)
         if match:
@@ -191,16 +230,5 @@ def __get_warnings(compiler_output):
 
         warnings.append((file_path, [(line, col), (line1,col1)], message))
     return warnings
-
-
-def compile_f(source_path, **kwargs):
-    source_path = Path(source_path)
-
-    if not 'out_dir' in kwargs:
-        kwargs['out_dir'] = source_path.parent
-
-    compile(source_path, **kwargs)
-
-
 
 

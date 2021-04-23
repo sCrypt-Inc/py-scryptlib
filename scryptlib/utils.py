@@ -4,13 +4,14 @@ from pathlib import Path
 
 from . import compiler_wrapper
 
+# TODO: Write docstrings for functions.
 
-def compile_contract(f_scrypt, out_dir=None, compiler_bin=None):
-    print('Compiling contract {}'.format(f_scrypt))
 
-    f_scrypt = Path(f_scrypt)
-    if not f_scrypt.is_file():
-        raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), f_scrypt.name)
+def compile_contract(contract, out_dir=None, compiler_bin=None, from_string=False):
+    if not from_string:
+        contract = Path(contract)
+        if not contract.is_file():
+            raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), contract.name)
     
     if not compiler_bin:
         raise Exception('Auto finding sCrypt compiler is not yet implemented.') # TODO
@@ -33,7 +34,7 @@ def compile_contract(f_scrypt, out_dir=None, compiler_bin=None):
             'out_dir': out_dir,
             'compiler_bin': compiler_bin
         }
-    return compiler_wrapper.compile_f(f_scrypt, **compile_args)
+    return compiler_wrapper.compile(contract, **compile_args)
 
 
 def find_compiler():
