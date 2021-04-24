@@ -96,7 +96,6 @@ def compile(source, **kwargs):
     source_prefix = source.stem if from_file else 'stdin'
     cwd = Path('.')
 
-
     if 'asm' in kwargs:
         asm = kwargs['asm']
     if 'debug' in kwargs:
@@ -121,6 +120,11 @@ def compile(source, **kwargs):
     if not 'compiler_bin' in kwargs:
         raise Exception('Missing argument "compiler_bin". Path to compiler not specified.')
     compiler_bin = kwargs['compiler_bin']
+
+    if from_file:
+        source_uri = source.absolute().as_uri()
+    else:
+        source_uri = 'stdin'
 
     # Assemble compiler command
     cmd_buff = [compiler_bin, 'compile']
@@ -158,12 +162,69 @@ def compile(source, **kwargs):
     # Collect warnings from compiler output.
     warnings = __get_warnings(res)
 
+    compiler_result_params = dict()
     out_files = dict()
+
     if ast or desc:
         out_file_ast = out_dir / '{}_ast.json'.format(source_prefix)
         out_files['ast'] = out_file_ast
-        with open(out_file_ast, 'r', encoding='utf-8') as f:
-            ast_obj = json.load(f)
+        ast_obj = __load_ast(out_file_ast)
+        # Change source file paths to URIs
+        __ast_filepaths_to_uris(ast_obj)
+        ast_root = ast_obj[source_uri]
+        static_consts = __ast_get_static_const_int_declarations(ast_obj)
+        aliases = __ast_get_aliases(ast_obj)
+        compiler_result_params['alias'] = aliases
+        compiler_result_params['source_file'] = source_uri
+        compiler_result_params['ast'] = ast_root
+        compiler_result_params['abi'] = __ast_get_abi_declaration(ast_root, aliases, static_consts)
+        del ast_obj[source_uri]
+        compiler_result_params['dep_ast'] = ast_obj
+
+    return CompilerResult(**compiler_result_params)
+
+
+def __ast_filepaths_to_uris(asts):
+    keys = list(asts.keys())
+    for key in keys:
+        if not key == 'stdin':
+            source_uri = Path(key).absolute().as_uri()
+            asts[source_uri] = asts.pop(key)
+
+
+def __load_ast(file_ast):
+    with open(file_ast, 'r', encoding='utf-8') as f:
+        ast_obj = json.load(f)
+    return ast_obj
+
+
+def __ast_get_aliases(asts):
+    res = []
+    for ast in asts.values():
+        for alias in ast['alias']:
+            res.append({
+                'name': alias['alias'],
+                'type': alias['type']
+                })
+    return res
+
+
+def __ast_get_static_const_int_declarations(asts):
+    res = dict()
+    for ast in asts.values():
+        contracts = ast['contracts']
+        for contract in contracts:
+            contract_name = contract['name']
+            for static in contract['statics']:
+                name = '{}.{}'.format(contract_name, static['name'])
+                value = static['expr']['value']
+                res[name] = value
+    return res
+
+
+def __ast_get_abi_declaration(ast, aliases, static_consts):
+    main_contract = ast['contracts'][-1]
+    print(main_contract)
 
 
 def __check_for_errors(compiler_output):
