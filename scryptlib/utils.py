@@ -1,8 +1,11 @@
 import sys
 import errno
+import re
 from pathlib import Path
 
 from . import compiler_wrapper
+from . import scrypt_types
+
 
 # TODO: Write docstrings for functions.
 
@@ -66,3 +69,62 @@ def find_compiler_windows():
 
 def find_compiler_checklocal(path_suffix):
     pass
+
+
+def to_literal_array_type(type_name, sizes):
+    # Returns e.g. 'int', [2,2,3] -> 'int[2][2][3]'
+    str_buff = [type_name]
+    for size in sizes:
+        str_buff.append('[')
+        str_buff.append(str(size))
+        str_buff.append(']')
+    return ''.join(str_buff)
+
+
+def get_struct_name_by_type(type_name):
+    type_name = type_name.strip()
+    match = re.match('^struct\s(\w+)\s\{\}$', type_name)
+    if match:
+        return match.group(1)
+    return ''
+
+
+def resolve_type(type_str, aliases):
+    if is_array_type(type_str):
+        elem_type_name, array_sizes = factorize_array_type_str(type_str)
+        return to_literal_array_type(elem_type_name, array_sizes)
+
+    if is_struct_type(type_str):
+        resolve_type(get_struct_name_by_type(type_str), aliases)
+
+    for alias in aliases:
+        if alias['name'] == type_str:
+            return resolve_type(alias['type'], aliases)
+
+    if type_str in scrypt_types.BASIC_TYPES.union(scrypt_types.DOMAIN_SUBTYPES):
+        return type_str
+    else:
+        return 'struct {} {{}}'.format(type_str)
+
+
+def is_array_type(type_str):
+    if re.match('^\w[\w.\s{}]+(\[[\w.]+\])+$', type_str):
+        return True
+    return False
+
+
+def is_struct_type(type_str):
+    if re.match('^struct\s(\w+)\s\{\}$', type_str):
+        return True
+    return False
+
+
+def factorize_array_type_str(type_str):
+    # Factor array declaration string to array type and sizes.
+    # e.g. 'int[N][N][4]' -> ['int', ['N', 'N', '4']]
+    array_sizes = []
+    for match in re.finditer('\[([\w.]+)\]+', type_str):
+        array_sizes.append(match.group(1))
+    elem_type_name = type_str.split('[')[0]
+    return elem_type_name, array_sizes
+

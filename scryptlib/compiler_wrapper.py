@@ -3,6 +3,12 @@ import json
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from enum import Enum
+
+from . import utils
+
+
+# TODO: Decide whether to keep stuff like ABI entites as dicts, or create a class for them.
 
 
 SYNTAX_ERR_REG = '(?P<filePath>[^\s]+):(?P<line>\d+):(?P<column>\d+):\n([^\n]+\n){3}' \
@@ -80,6 +86,11 @@ class CompilerResult:
         self.alias = alias
         self.source_file = source_file
         self.auto_typed_vars = auto_typed_vars
+
+
+class ABIEntityType(Enum):
+    FUNCTION = 0
+    CONSTRUCTOR = 1
 
 
 def compile(source, **kwargs):
@@ -172,12 +183,12 @@ def compile(source, **kwargs):
         # Change source file paths to URIs
         __ast_filepaths_to_uris(ast_obj)
         ast_root = ast_obj[source_uri]
-        static_consts = __ast_get_static_const_int_declarations(ast_obj)
+        static_int_consts = __ast_get_static_const_int_declarations(ast_obj)
         aliases = __ast_get_aliases(ast_obj)
         compiler_result_params['alias'] = aliases
         compiler_result_params['source_file'] = source_uri
         compiler_result_params['ast'] = ast_root
-        compiler_result_params['abi'] = __ast_get_abi_declaration(ast_root, aliases, static_consts)
+        compiler_result_params['abi'] = __ast_get_abi_declaration(ast_root, aliases, static_int_consts)
         del ast_obj[source_uri]
         compiler_result_params['dep_ast'] = ast_obj
 
@@ -218,13 +229,115 @@ def __ast_get_static_const_int_declarations(asts):
             for static in contract['statics']:
                 name = '{}.{}'.format(contract_name, static['name'])
                 value = static['expr']['value']
-                res[name] = value
+                res[name] = int(value)
     return res
 
 
-def __ast_get_abi_declaration(ast, aliases, static_consts):
+def __ast_get_abi_declaration(ast, aliases, static_int_consts):
     main_contract = ast['contracts'][-1]
-    print(main_contract)
+    if not main_contract:
+        return { 'contract': '', 'abi': [] }
+
+    main_contract_name = main_contract['name']
+    interfaces = __get_public_function_declarations(main_contract)
+    constructor = __get_constructor_declaration(main_contract)
+    if constructor:
+        interfaces.append(constructor)
+
+    for interface in interfaces:
+        for param in interface['params']:
+            p_type = __resolve_abi_param_type(
+                        main_contract_name,
+                        param['type'], 
+                        aliases,
+                        static_int_consts
+                        )
+            param['type'] = p_type
+
+    return { 'contract': main_contract_name, 'abi': interfaces }
+
+
+def __get_public_function_declarations(contract):
+    res = []
+    pub_index = 0
+    functions = contract['functions']
+    for function in functions:
+        if function['visibility'] == 'Public':
+           abi_type = ABIEntityType.FUNCTION
+           name = function['name'] 
+           if function['nodeType'] == 'Constructor':
+               index = None
+           else:
+               index = pub_index
+               pub_index += 1
+           params = []
+           for param in function['params']:
+               p_name = param['name']
+               p_type = param['type']
+               params.append({ 'name': p_name, 'type': p_type })
+
+           abi_entity = {
+                'type': abi_type,
+                'name': name,
+                'index': index,
+                'params': params
+                }
+           res.append(abi_entity)
+    return res
+
+
+def __get_constructor_declaration(contract):
+    constructor = contract['constructor']   # Explicit constructor
+    properties = contract['properties']     # Implicit constructor
+    params = []
+    if constructor:
+        for param in constructor['params']:
+            p_name = param['name']
+            p_type = param['type']
+            params.append({ 'name': p_name, 'type': p_type })
+        return { 'type': ABIEntityType.CONSTRUCTOR, 'params': params }
+    elif properties:
+        for prop in properties:
+            p_name = param['name'].replace('this.', '')
+            p_type = param['type']
+            params.append({ 'name': p_name, 'type': p_type })
+        return { 'type': ABIEntityType.CONSTRUCTOR, 'params': params }
+
+
+def __resolve_abi_param_type(contract_name, type_str, aliases, static_int_consts):
+    resolved_type = type_str
+    if utils.is_array_type(type_str):
+        resolved_type = __resolve_array_type_w_const_int(contract_name, resolved_type, static_int_consts)
+    resolved_type = utils.resolve_type(type_str, aliases)
+
+    if utils.is_struct_type(resolved_type):
+        return utils.get_struct_name_by_type(resolved_type)
+    elif utils.is_array_type(resolved_type):
+        elem_type_name, array_sizes = utils.factorize_array_type_str(type_str)
+        if utils.is_struct_type(elem_type_name):
+            elem_type_name = utils.get_struct_name_by_type(type_str)
+        return utils.to_literal_array_type(elem_type_name, array_sizes)
+
+    return resolved_type
+
+
+def __resolve_array_type_w_const_int(contract_name, type_str, static_int_consts):
+    # Resolves array declaration string with static constants as sizes.
+    # e.g. 'int[N][2]' -> 'int[5][2]'
+    elem_type_name, array_sizes = utils.factorize_array_type_str(type_str)
+
+    # Resolve all constants to integers.
+    sizes = []
+    for size_str in array_sizes:
+        if size_str.isdigit():
+            sizes.append(int(size_str))
+        else:
+            if size_str.find('.') > 0:
+                sizes.append(static_int_consts[size_str])
+            else:
+                sizes.append(static_int_consts['{}.{}'.format(contract_name, size_str)])
+
+    return utils.to_literal_array_type(elem_type_name, sizes)
 
 
 def __check_for_errors(compiler_output):
