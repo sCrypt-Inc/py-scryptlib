@@ -18,6 +18,8 @@ SEMANTIC_ERR_REG = 'Error:(\s|\n)*(?P<filePath>[^\s]+):(?P<line>\d+):(?P<column>
 INTERNAL_ERR_REG = 'Internal error:(?P<message>.+)'
 WARNING_REG = 'Warning:(\s|\n)*(?P<filePath>[^\s]+):(?P<line>\d+):(?P<column>\d+):' \
         '(?P<line1>\d+):(?P<column1>\d+):*\n(?P<message>[^\n]+)\n'
+SOURCE_REG = '^(?P<fileIndex>-?\d+):(?P<line>\d+):(?P<col>\d+):(?P<endLine>\d+):' \
+        '(?P<endCol>\d+)(#(?P<tagStr>.+))?'
 
 
 class SyntaxErrorEntry:
@@ -91,6 +93,12 @@ class CompilerResult:
 class ABIEntityType(Enum):
     FUNCTION = 0
     CONSTRUCTOR = 1
+
+
+class DebugModeTag(Enum):
+    FUNC_START = 'F0'
+    FUNC_END = 'F1'
+    LOOP_START = 'L0'
 
 
 def compile(source, **kwargs):
@@ -179,7 +187,7 @@ def compile(source, **kwargs):
     if ast or desc:
         out_file_ast = out_dir / '{}_ast.json'.format(source_prefix)
         out_files['ast'] = out_file_ast
-        ast_obj = __load_ast(out_file_ast)
+        ast_obj = __load_json(out_file_ast)
         # Change source file paths to URIs
         __ast_filepaths_to_uris(ast_obj)
         ast_root = ast_obj[source_uri]
@@ -190,7 +198,43 @@ def compile(source, **kwargs):
         compiler_result_params['ast'] = ast_root
         compiler_result_params['abi'] = __ast_get_abi_declaration(ast_root, aliases, static_int_consts)
         del ast_obj[source_uri]
-        compiler_result_params['dep_ast'] = ast_obj
+        dependency_asts = ast_obj
+        compiler_result_params['dep_ast'] = dependency_asts
+        compiler_result_params['contract'] = compiler_result_params['abi']['contract']
+        compiler_result_params['structs'] = __ast_get_struct_declarations(ast_root, dependency_asts)
+
+    if asm or desc:
+        out_file_asm = out_dir / '{}_asm.json'.format(source_prefix)
+        out_files['asm'] = out_file_asm
+        asm_obj = __load_json(out_file_asm)
+
+        sources = asm_obj['sources']
+
+        asm_items = []
+        for output in asm_obj['output']:
+            if not debug:
+                asm_items.append({ 'opcode': output['opcode'] })
+                continue
+            
+            match = re.match(SOURCE_REG, output['src'])
+            if match:
+                file_idx = int(match.group('fileIndex'))
+
+                debug_tag = None
+                tag_str = match.group('tagStr')
+                if tag_str:
+                    if re.search('\w+\.\w+:0', tag_str):
+                        debug_tag = DebugModeTag.FUNC_START
+                    if re.search('\w+\.\w+:1', tag_str):
+                        debug_tag = DebugModeTag.FUNC_END
+                    if re.search('loop:0', tag_str):
+                        debug_tag = DebugModeTag.LOOP_START
+
+                if sources[file_idx]:
+                    print(sources[file_idx])
+               
+               
+
 
     return CompilerResult(**compiler_result_params)
 
@@ -203,10 +247,10 @@ def __ast_filepaths_to_uris(asts):
             asts[source_uri] = asts.pop(key)
 
 
-def __load_ast(file_ast):
-    with open(file_ast, 'r', encoding='utf-8') as f:
-        ast_obj = json.load(f)
-    return ast_obj
+def __load_json(file_json):
+    with open(file_json, 'r', encoding='utf-8') as f:
+        obj = json.load(f)
+    return obj
 
 
 def __ast_get_aliases(asts):
@@ -255,6 +299,24 @@ def __ast_get_abi_declaration(ast, aliases, static_int_consts):
             param['type'] = p_type
 
     return { 'contract': main_contract_name, 'abi': interfaces }
+
+
+def __ast_get_struct_declarations(ast_root, dependency_asts):
+    res = []
+    all_asts = [ast_root]
+    for key in dependency_asts.keys():
+        all_asts.append(dependency_asts[key])
+
+    for ast in all_asts:
+        for struct in ast['structs']:
+            name = struct['name']
+            params = []
+            for field in struct['fields']:
+                p_name = field['name']
+                p_type = field['type']
+                params.append({ 'name': p_name, 'type': p_type })
+            res.append({ 'name': name, 'params': params })
+    return res
 
 
 def __get_public_function_declarations(contract):
