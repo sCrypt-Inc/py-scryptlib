@@ -1,6 +1,7 @@
 import re
 import json
 import subprocess
+import hashlib
 from datetime import datetime
 from pathlib import Path
 from enum import Enum
@@ -9,6 +10,9 @@ from . import utils
 
 
 # TODO: Decide whether to keep stuff like ABI entites as dicts, or create a class for them.
+
+
+CURRENT_CONTRACT_DESCRIPTION_VERSION = 3;
 
 
 SYNTAX_ERR_REG = '(?P<filePath>[^\s]+):(?P<line>\d+):(?P<column>\d+):\n([^\n]+\n){3}' \
@@ -90,11 +94,6 @@ class CompilerResult:
         self.auto_typed_vars = auto_typed_vars
 
 
-class ABIEntityType(Enum):
-    FUNCTION = 0
-    CONSTRUCTOR = 1
-
-
 class DebugModeTag(Enum):
     FUNC_START = 'F0'
     FUNC_END = 'F1'
@@ -107,6 +106,7 @@ def compile(source, **kwargs):
     optimize = False
     ast = False
     desc = False
+    source_map = False
     st = datetime.now()
     timeout = 1200
     out_files = dict()
@@ -131,6 +131,8 @@ def compile(source, **kwargs):
         cmd_args = kwargs['cmd_args']
     if 'cwd' in kwargs:
         cwd = Path(kwargs['cwd'])
+    if 'source_map' in kwargs:
+        source_map = kwargs['source_map']
 
     if not 'out_dir' in kwargs:
         raise Exception('Missing argument "out_dir". No output directory specified.')
@@ -196,11 +198,12 @@ def compile(source, **kwargs):
         compiler_result_params['alias'] = aliases
         compiler_result_params['source_file'] = source_uri
         compiler_result_params['ast'] = ast_root
-        compiler_result_params['abi'] = __ast_get_abi_declaration(ast_root, aliases, static_int_consts)
+        abi_declaration = __ast_get_abi_declaration(ast_root, aliases, static_int_consts)
+        compiler_result_params['abi'] = abi_declaration['abi']
         del ast_obj[source_uri]
         dependency_asts = ast_obj
         compiler_result_params['dep_ast'] = dependency_asts
-        compiler_result_params['contract'] = compiler_result_params['abi']['contract']
+        compiler_result_params['contract'] = abi_declaration['contract']
         compiler_result_params['structs'] = __ast_get_struct_declarations(ast_root, dependency_asts)
 
     if asm or desc:
@@ -209,6 +212,13 @@ def compile(source, **kwargs):
         asm_obj = __load_json(out_file_asm)
 
         sources = asm_obj['sources']
+
+        sources_fullpath = []
+        for source in sources:
+            if source != 'stdin' and source != 'std':
+                sources_fullpath.append(str(Path(source).absolute()))
+            else:
+                sources_fullpath.append('std')
 
         asm_items = []
         for output in asm_obj['output']:
@@ -230,13 +240,112 @@ def compile(source, **kwargs):
                     if re.search('loop:0', tag_str):
                         debug_tag = DebugModeTag.LOOP_START
 
-                if sources[file_idx]:
-                    print(sources[file_idx])
-               
-               
+                pos = None
+                if len(sources) > file_idx:
+                    pos = {
+                        'file': sources_fullpath[file_idx],
+                        'line': int(match.group('line')),
+                        'endLine': int(match.group('endLine')),
+                        'column': int(match.group('col')),
+                        'endColumn': int(match.group('endCol'))
+                        }
+                
+                asm_items.append({
+                    'opcode': output['opcode'],
+                    'stack': output['stack'],
+                    'pos': pos,
+                    'debugTag': debug_tag
+                    })
+
+        compiler_result_params['asm'] = asm_items    
+
+        auto_typed_vars = []
+        if debug:
+            for item in asm_obj['autoTypedVars']:
+                match = re.match(SOURCE_REG, item['src'])
+                if match:
+                    file_idx = int(match.group('fileIndex'))    
+                    pos = None
+                    if len(sources) > file_idx:
+                        s = sources[file_idx] 
+                        if s != 'stdin' and s != 'std':
+                            pos_file = str(Path(s).absolute())
+                        else:
+                            pos_file = 'std'
+                        pos = {
+                            'file': pos_file,
+                            'line': int(match.group('line')),
+                            'endLine': int(match.group('endLine')),
+                            'column': int(match.group('col')),
+                            'endColumn': int(match.group('endCol'))
+                            }
+                    auto_typed_vars.append({
+                        'name': item['name'],
+                        'type': item['type'],
+                        'pos': pos
+                        })
+        compiler_result_params['auto_typed_vars'] = auto_typed_vars
+
+    if desc:
+        out_file_desc = out_dir / '{}_desc.json'.format(source_prefix)
+        out_files['desc'] = out_file_desc
+        compiler_version = __get_compiler_version(compiler_bin)
+        source_md5 = __get_source_md5(source)
+
+        description = {
+                'version': CURRENT_CONTRACT_DESCRIPTION_VERSION,
+                'compilerVersion': compiler_version,
+                'contract': compiler_result_params['contract'],
+                'md5': source_md5,
+                'structs': compiler_result_params.get('structs', []),
+                'alias': compiler_result_params.get('alias', []),
+                'abi': compiler_result_params.get('abi', []),
+                'file': '',
+                'asm': __get_asm_as_string(compiler_result_params['asm']),
+                'sources': [],
+                'sourceMap': []
+            }
+
+        if debug and source_map and asm_obj:
+            description['file'] = compiler_result_params['source_file']
+            description['sources'] = sources_fullpath
+            description['sourceMap'] = [ item['src'] for item in asm_obj['output'] ]
+        
+        with open(out_file_desc, 'w', encoding='utf-8') as f:
+            json.dump(description, f, indent=4)
+
+        compiler_result_params['compiler_version'] = compiler_version
+        compiler_result_params['md5'] = source_md5
 
 
     return CompilerResult(**compiler_result_params)
+
+
+def __get_compiler_version(compiler_bin):
+    res = subprocess.run([compiler_bin, 'version'], stdout=subprocess.PIPE).stdout
+    return res.decode(encoding='utf-8').split()[1]
+
+
+def __get_source_md5(source):
+    if isinstance(source, Path):
+        with open(source, 'r', encoding='utf-8') as f:
+            source = f.read()
+    return hashlib.md5(source.encode(encoding='utf-8')).hexdigest()
+
+
+def __get_asm_as_string(asm_objs):
+    res_buff = []
+    for item in asm_objs:
+       res_buff.append(item['opcode'].strip()) 
+    return ' '.join(res_buff)
+
+
+def __get_full_source_path(rel_path, base_dir, cur_file_name):
+    if rel_path.endswith('stdin'):
+        return str(Path(base_dir, cur_file_name))
+    if rel_path == 'std':
+        return 'std'
+    return str(Path(base_dir, rel_path))
 
 
 def __ast_filepaths_to_uris(asts):
@@ -271,6 +380,8 @@ def __ast_get_static_const_int_declarations(asts):
         for contract in contracts:
             contract_name = contract['name']
             for static in contract['statics']:
+                if not static['const'] or static['expr']['nodeType'] != 'IntLiteral':
+                    continue
                 name = '{}.{}'.format(contract_name, static['name'])
                 value = static['expr']['value']
                 res[name] = int(value)
@@ -285,8 +396,7 @@ def __ast_get_abi_declaration(ast, aliases, static_int_consts):
     main_contract_name = main_contract['name']
     interfaces = __get_public_function_declarations(main_contract)
     constructor = __get_constructor_declaration(main_contract)
-    if constructor:
-        interfaces.append(constructor)
+    interfaces.append(constructor)
 
     for interface in interfaces:
         for param in interface['params']:
@@ -325,7 +435,7 @@ def __get_public_function_declarations(contract):
     functions = contract['functions']
     for function in functions:
         if function['visibility'] == 'Public':
-           abi_type = ABIEntityType.FUNCTION
+           abi_type = 'function'
            name = function['name'] 
            if function['nodeType'] == 'Constructor':
                index = None
@@ -357,13 +467,12 @@ def __get_constructor_declaration(contract):
             p_name = param['name']
             p_type = param['type']
             params.append({ 'name': p_name, 'type': p_type })
-        return { 'type': ABIEntityType.CONSTRUCTOR, 'params': params }
     elif properties:
         for prop in properties:
             p_name = param['name'].replace('this.', '')
             p_type = param['type']
             params.append({ 'name': p_name, 'type': p_type })
-        return { 'type': ABIEntityType.CONSTRUCTOR, 'params': params }
+    return {'type': 'constructor', 'params': params}
 
 
 def __resolve_abi_param_type(contract_name, type_str, aliases, static_int_consts):
