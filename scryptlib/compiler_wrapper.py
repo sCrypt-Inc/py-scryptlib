@@ -100,129 +100,148 @@ class DebugModeTag(Enum):
     LOOP_START = 'L0'
 
 
-def compile(source, **kwargs):
-    asm = True
-    debug = True
-    optimize = False
-    ast = False
-    desc = False
-    source_map = False
-    st = datetime.now()
-    timeout = 1200
-    out_files = dict()
-    cmd_args = None
-    from_file = isinstance(source, Path)
-    source_prefix = source.stem if from_file else 'stdin'
-    cwd = Path('.')
+class CompilerWrapper:
+    
+    def __init__(self, 
+                 out_dir,
+                 compiler_bin,
+                 asm = True,
+                 debug = True,
+                 optimize = False,
+                 ast = False,
+                 desc = False,
+                 source_map = False,
+                 st = datetime.now(),
+                 timeout = 1200,
+                 out_files = dict(),
+                 cmd_args = None,
+                 cwd = Path('.')):
+        self.out_dir = Path(out_dir)
+        self.compiler_bin = compiler_bin
+        self.asm = asm
+        self.debug = debug
+        self.optimize = optimize
+        self.ast = ast
+        self.desc = desc
+        self.source_map = source_map
+        self.st = st
+        self.timeout = timeout
+        self.out_files = out_files
+        self.cmd_args = cmd_args
+        self.cwd = cwd
+        self._compiler_version = self.__get_compiler_version(compiler_bin)
 
-    if 'asm' in kwargs:
-        asm = kwargs['asm']
-    if 'debug' in kwargs:
-        asm = kwargs['debug']
-    if 'optimize' in kwargs:
-        asm = kwargs['optimize']
-    if 'ast' in kwargs:
-        ast = kwargs['asm']
-    if 'desc' in kwargs:
-        desc = kwargs['desc']
-    if 'timeout' in kwargs:
-        timeout = kwargs['timeout']
-    if 'cmd_args' in kwargs:
-        cmd_args = kwargs['cmd_args']
-    if 'cwd' in kwargs:
-        cwd = Path(kwargs['cwd'])
-    if 'source_map' in kwargs:
-        source_map = kwargs['source_map']
+    def compile(self, source):
+        from_file = isinstance(source, Path)
+        source_prefix = source.stem if from_file else 'stdin'
 
-    if not 'out_dir' in kwargs:
-        raise Exception('Missing argument "out_dir". No output directory specified.')
-    out_dir = Path(kwargs['out_dir'])
+        if from_file:
+            source_uri = source.absolute().as_uri()
+        else:
+            source_uri = 'stdin'
 
-    if not 'compiler_bin' in kwargs:
-        raise Exception('Missing argument "compiler_bin". Path to compiler not specified.')
-    compiler_bin = kwargs['compiler_bin']
+        # Assemble compiler command
+        compiler_cmd = self.__assemble_compiler_cmd(source, from_file)
 
-    if from_file:
-        source_uri = source.absolute().as_uri()
-    else:
-        source_uri = 'stdin'
+        # Execute compiler
+        res = subprocess.run(compiler_cmd, 
+                stdout=subprocess.PIPE, 
+                input=None if from_file else source.encode('utf-8'),
+                timeout=self.timeout,
+                cwd=self.cwd
+            ).stdout
 
-    # Assemble compiler command
-    cmd_buff = [compiler_bin, 'compile']
-    if asm:
-        cmd_buff.append('--asm')
-    if ast or desc:
-        cmd_buff.append('--ast')
-    if debug:
-        cmd_buff.append('--debug')
-    if optimize:
-        cmd_buff.append('--opt')
-    cmd_buff.append('-r')
-    cmd_buff.append('-o')
-    cmd_buff.append('{}'.format(str(out_dir.absolute())))
-    if cmd_args:
-        cmd_buff.append(cmd_args)
-    if from_file:
-        cmd_buff.append(str(source))
+        # If compiling on win32, the outputs will be CRLF seperated.
+        # We replace CRLF with LF, to make SYNTAX_ERR_REG、SEMANTIC_ERR_REG、IMPORT_ERR_REG work.
+        res = res.replace(b'\r\n', b'\n').decode('utf-8')
 
-    # Execute compiler
-    res = subprocess.run(cmd_buff, 
-            stdout=subprocess.PIPE, 
-            input=None if from_file else source.encode('utf-8'),
-            timeout=timeout,
-            cwd=cwd
-        ).stdout
+        # Check compiler output for errors and raise exception if needed.
+        self.__check_for_errors(res)
 
-    # If compiling on win32, the outputs will be CRLF seperated.
-    # We replace CRLF with LF, to make SYNTAX_ERR_REG、SEMANTIC_ERR_REG、IMPORT_ERR_REG work.
-    res = res.replace(b'\r\n', b'\n').decode('utf-8')
+        # Collect warnings from compiler output.
+        warnings = self.__get_warnings(res)
 
-    # Check compiler output for errors and raise exception if needed.
-    __check_for_errors(res)
+        compiler_result_params = dict()
+        out_files = dict()
 
-    # Collect warnings from compiler output.
-    warnings = __get_warnings(res)
+        if self.ast or self.desc:
+            out_file_ast = self.out_dir / '{}_ast.json'.format(source_prefix)
+            out_files['ast'] = out_file_ast
+            ast_obj = self.__load_json(out_file_ast)
+            ast_res = self.__collect_results_ast(ast_obj, source_uri)
+            compiler_result_params.update(ast_res)
+            compiler_result_params['source_file'] = source_uri
 
-    compiler_result_params = dict()
-    out_files = dict()
+        if self.asm or self.desc:
+            out_file_asm = self.out_dir / '{}_asm.json'.format(source_prefix)
+            out_files['asm'] = out_file_asm
+            asm_obj = self.__load_json(out_file_asm)
+            asm_res = self.__collect_results_asm(asm_obj, source)
+            compiler_result_params.update(asm_res)
 
-    if ast or desc:
-        out_file_ast = out_dir / '{}_ast.json'.format(source_prefix)
-        out_files['ast'] = out_file_ast
-        ast_obj = __load_json(out_file_ast)
+        if self.desc:
+            out_file_desc = self.out_dir / '{}_desc.json'.format(source_prefix)
+            out_files['desc'] = out_file_desc
+
+            desc = self.__construct_desc(source,
+                        compiler_result_params['contract'],
+                        compiler_result_params['source_file'],
+                        compiler_result_params['asm'],
+                        asm_obj,
+                        structs = compiler_result_params.get('structs', []),
+                        alias = compiler_result_params.get('alias', []),
+                        abi = compiler_result_params.get('abi', [])
+                    )
+
+            with open(out_file_desc, 'w', encoding='utf-8') as f:
+                json.dump(desc, f, indent=4)
+
+        return CompilerResult(**compiler_result_params)
+
+    def __assemble_compiler_cmd(self, source, from_file):
+        cmd_buff = [self.compiler_bin, 'compile']
+        if self.asm:
+            cmd_buff.append('--asm')
+        if self.ast or self.desc:
+            cmd_buff.append('--ast')
+        if self.debug:
+            cmd_buff.append('--debug')
+        if self.optimize:
+            cmd_buff.append('--opt')
+        cmd_buff.append('-r')
+        cmd_buff.append('-o')
+        cmd_buff.append('{}'.format(str(self.out_dir.absolute())))
+        if self.cmd_args:
+            cmd_buff.append(self.cmd_args)
+        if from_file:
+            cmd_buff.append(str(source))
+        return cmd_buff
+
+    def __collect_results_ast(self, ast_obj, source_uri):
+        res = dict()
         # Change source file paths to URIs
-        __ast_filepaths_to_uris(ast_obj)
+        self.__ast_filepaths_to_uris(ast_obj)
         ast_root = ast_obj[source_uri]
-        static_int_consts = __ast_get_static_const_int_declarations(ast_obj)
-        aliases = __ast_get_aliases(ast_obj)
-        compiler_result_params['alias'] = aliases
-        compiler_result_params['source_file'] = source_uri
-        compiler_result_params['ast'] = ast_root
-        abi_declaration = __ast_get_abi_declaration(ast_root, aliases, static_int_consts)
-        compiler_result_params['abi'] = abi_declaration['abi']
+        static_int_consts = self.__ast_get_static_const_int_declarations(ast_obj)
+        aliases = self.__ast_get_aliases(ast_obj)
+        res['alias'] = aliases
+        res['ast'] = ast_root
+        abi_declaration = self.__ast_get_abi_declaration(ast_root, aliases, static_int_consts)
+        res['abi'] = abi_declaration['abi']
         del ast_obj[source_uri]
-        dependency_asts = ast_obj
-        compiler_result_params['dep_ast'] = dependency_asts
-        compiler_result_params['contract'] = abi_declaration['contract']
-        compiler_result_params['structs'] = __ast_get_struct_declarations(ast_root, dependency_asts)
+        res['dep_ast'] = ast_obj
+        res['contract'] = abi_declaration['contract']
+        res['structs'] = self.__ast_get_struct_declarations(ast_root, ast_obj)
+        return res
 
-    if asm or desc:
-        out_file_asm = out_dir / '{}_asm.json'.format(source_prefix)
-        out_files['asm'] = out_file_asm
-        asm_obj = __load_json(out_file_asm)
-
+    def __collect_results_asm(self, asm_obj, source):
+        res = dict()
         sources = asm_obj['sources']
-
-        sources_fullpath = []
-        for source in sources:
-            if source != 'stdin' and source != 'std':
-                sources_fullpath.append(str(Path(source).absolute()))
-            else:
-                sources_fullpath.append('std')
+        sources_fullpath = self.__get_sources_fullpath(sources)
 
         asm_items = []
         for output in asm_obj['output']:
-            if not debug:
+            if not self.debug:
                 asm_items.append({ 'opcode': output['opcode'] })
                 continue
             
@@ -257,10 +276,10 @@ def compile(source, **kwargs):
                     'debugTag': debug_tag
                     })
 
-        compiler_result_params['asm'] = asm_items    
+        res['asm'] = asm_items    
 
         auto_typed_vars = []
-        if debug:
+        if self.debug:
             for item in asm_obj['autoTypedVars']:
                 match = re.match(SOURCE_REG, item['src'])
                 if match:
@@ -284,296 +303,304 @@ def compile(source, **kwargs):
                         'type': item['type'],
                         'pos': pos
                         })
-        compiler_result_params['auto_typed_vars'] = auto_typed_vars
+        res['auto_typed_vars'] = auto_typed_vars
 
-    if desc:
-        out_file_desc = out_dir / '{}_desc.json'.format(source_prefix)
-        out_files['desc'] = out_file_desc
-        compiler_version = __get_compiler_version(compiler_bin)
-        source_md5 = __get_source_md5(source)
+        return res
 
-        description = {
+    def __construct_desc(self, source, contract, source_file, asm, asm_out_obj,
+            structs=list(), alias=list(), abi=list()):
+        source_md5 = self.__get_source_md5(source)
+        res = {
                 'version': CURRENT_CONTRACT_DESCRIPTION_VERSION,
-                'compilerVersion': compiler_version,
-                'contract': compiler_result_params['contract'],
+                'compilerVersion': self._compiler_version,
+                'contract': contract,
                 'md5': source_md5,
-                'structs': compiler_result_params.get('structs', []),
-                'alias': compiler_result_params.get('alias', []),
-                'abi': compiler_result_params.get('abi', []),
+                'structs': structs,
+                'alias': alias,
+                'abi': abi,
                 'file': '',
-                'asm': __get_asm_as_string(compiler_result_params['asm']),
+                'asm': self.__get_asm_as_string(asm),
                 'sources': [],
                 'sourceMap': []
             }
 
-        if debug and source_map and asm_obj:
-            description['file'] = compiler_result_params['source_file']
-            description['sources'] = sources_fullpath
-            description['sourceMap'] = [ item['src'] for item in asm_obj['output'] ]
-        
-        with open(out_file_desc, 'w', encoding='utf-8') as f:
-            json.dump(description, f, indent=4)
+        if self.debug and self.source_map and asm:
+            sources = asm_out_obj['sources']
+            sources_fullpath = self.__get_sources_fullpath(sources)
+            res['file'] = source_file
+            res['sources'] = sources_fullpath
+            res['sourceMap'] = [ item['src'] for item in asm_out_obj['output'] ]
 
-        compiler_result_params['compiler_version'] = compiler_version
-        compiler_result_params['md5'] = source_md5
+        res['compiler_version'] = self._compiler_version
+        res['md5'] = source_md5
 
+        return res
 
-    return CompilerResult(**compiler_result_params)
+    @staticmethod
+    def __get_compiler_version(compiler_bin):
+        res = subprocess.run([compiler_bin, 'version'], stdout=subprocess.PIPE).stdout
+        return res.decode(encoding='utf-8').split()[1]
 
+    @staticmethod
+    def __get_source_md5(source):
+        if isinstance(source, Path):
+            with open(source, 'r', encoding='utf-8') as f:
+                source = f.read()
+        return hashlib.md5(source.encode(encoding='utf-8')).hexdigest()
 
-def __get_compiler_version(compiler_bin):
-    res = subprocess.run([compiler_bin, 'version'], stdout=subprocess.PIPE).stdout
-    return res.decode(encoding='utf-8').split()[1]
-
-
-def __get_source_md5(source):
-    if isinstance(source, Path):
-        with open(source, 'r', encoding='utf-8') as f:
-            source = f.read()
-    return hashlib.md5(source.encode(encoding='utf-8')).hexdigest()
-
-
-def __get_asm_as_string(asm_objs):
-    res_buff = []
-    for item in asm_objs:
-       res_buff.append(item['opcode'].strip()) 
-    return ' '.join(res_buff)
-
-
-def __get_full_source_path(rel_path, base_dir, cur_file_name):
-    if rel_path.endswith('stdin'):
-        return str(Path(base_dir, cur_file_name))
-    if rel_path == 'std':
-        return 'std'
-    return str(Path(base_dir, rel_path))
-
-
-def __ast_filepaths_to_uris(asts):
-    keys = list(asts.keys())
-    for key in keys:
-        if not key == 'stdin':
-            source_uri = Path(key).absolute().as_uri()
-            asts[source_uri] = asts.pop(key)
-
-
-def __load_json(file_json):
-    with open(file_json, 'r', encoding='utf-8') as f:
-        obj = json.load(f)
-    return obj
-
-
-def __ast_get_aliases(asts):
-    res = []
-    for ast in asts.values():
-        for alias in ast['alias']:
-            res.append({
-                'name': alias['alias'],
-                'type': alias['type']
-                })
-    return res
-
-
-def __ast_get_static_const_int_declarations(asts):
-    res = dict()
-    for ast in asts.values():
-        contracts = ast['contracts']
-        for contract in contracts:
-            contract_name = contract['name']
-            for static in contract['statics']:
-                if not static['const'] or static['expr']['nodeType'] != 'IntLiteral':
-                    continue
-                name = '{}.{}'.format(contract_name, static['name'])
-                value = static['expr']['value']
-                res[name] = int(value)
-    return res
-
-
-def __ast_get_abi_declaration(ast, aliases, static_int_consts):
-    main_contract = ast['contracts'][-1]
-    if not main_contract:
-        return { 'contract': '', 'abi': [] }
-
-    main_contract_name = main_contract['name']
-    interfaces = __get_public_function_declarations(main_contract)
-    constructor = __get_constructor_declaration(main_contract)
-    interfaces.append(constructor)
-
-    for interface in interfaces:
-        for param in interface['params']:
-            p_type = __resolve_abi_param_type(
-                        main_contract_name,
-                        param['type'], 
-                        aliases,
-                        static_int_consts
-                        )
-            param['type'] = p_type
-
-    return { 'contract': main_contract_name, 'abi': interfaces }
-
-
-def __ast_get_struct_declarations(ast_root, dependency_asts):
-    res = []
-    all_asts = [ast_root]
-    for key in dependency_asts.keys():
-        all_asts.append(dependency_asts[key])
-
-    for ast in all_asts:
-        for struct in ast['structs']:
-            name = struct['name']
-            params = []
-            for field in struct['fields']:
-                p_name = field['name']
-                p_type = field['type']
-                params.append({ 'name': p_name, 'type': p_type })
-            res.append({ 'name': name, 'params': params })
-    return res
-
-
-def __get_public_function_declarations(contract):
-    res = []
-    pub_index = 0
-    functions = contract['functions']
-    for function in functions:
-        if function['visibility'] == 'Public':
-           abi_type = 'function'
-           name = function['name'] 
-           if function['nodeType'] == 'Constructor':
-               index = None
-           else:
-               index = pub_index
-               pub_index += 1
-           params = []
-           for param in function['params']:
-               p_name = param['name']
-               p_type = param['type']
-               params.append({ 'name': p_name, 'type': p_type })
-
-           abi_entity = {
-                'type': abi_type,
-                'name': name,
-                'index': index,
-                'params': params
-                }
-           res.append(abi_entity)
-    return res
-
-
-def __get_constructor_declaration(contract):
-    constructor = contract['constructor']   # Explicit constructor
-    properties = contract['properties']     # Implicit constructor
-    params = []
-    if constructor:
-        for param in constructor['params']:
-            p_name = param['name']
-            p_type = param['type']
-            params.append({ 'name': p_name, 'type': p_type })
-    elif properties:
-        for prop in properties:
-            p_name = param['name'].replace('this.', '')
-            p_type = param['type']
-            params.append({ 'name': p_name, 'type': p_type })
-    return {'type': 'constructor', 'params': params}
-
-
-def __resolve_abi_param_type(contract_name, type_str, aliases, static_int_consts):
-    resolved_type = type_str
-    if utils.is_array_type(type_str):
-        resolved_type = __resolve_array_type_w_const_int(contract_name, resolved_type, static_int_consts)
-    resolved_type = utils.resolve_type(type_str, aliases)
-
-    if utils.is_struct_type(resolved_type):
-        return utils.get_struct_name_by_type(resolved_type)
-    elif utils.is_array_type(resolved_type):
-        elem_type_name, array_sizes = utils.factorize_array_type_str(type_str)
-        if utils.is_struct_type(elem_type_name):
-            elem_type_name = utils.get_struct_name_by_type(type_str)
-        return utils.to_literal_array_type(elem_type_name, array_sizes)
-
-    return resolved_type
-
-
-def __resolve_array_type_w_const_int(contract_name, type_str, static_int_consts):
-    # Resolves array declaration string with static constants as sizes.
-    # e.g. 'int[N][2]' -> 'int[5][2]'
-    elem_type_name, array_sizes = utils.factorize_array_type_str(type_str)
-
-    # Resolve all constants to integers.
-    sizes = []
-    for size_str in array_sizes:
-        if size_str.isdigit():
-            sizes.append(int(size_str))
-        else:
-            if size_str.find('.') > 0:
-                sizes.append(static_int_consts[size_str])
+    @staticmethod
+    def __get_sources_fullpath(sources):
+        res = []
+        for source in sources:
+            if source != 'stdin' and source != 'std':
+                res.append(str(Path(source).absolute()))
             else:
-                sizes.append(static_int_consts['{}.{}'.format(contract_name, size_str)])
+                res.append('std')
+        return res
 
-    return utils.to_literal_array_type(elem_type_name, sizes)
+    @staticmethod
+    def __get_asm_as_string(asm_objs):
+        res_buff = []
+        for item in asm_objs:
+           res_buff.append(item['opcode'].strip()) 
+        return ' '.join(res_buff)
 
+    @staticmethod
+    def __get_full_source_path(rel_path, base_dir, cur_file_name):
+        if rel_path.endswith('stdin'):
+            return str(Path(base_dir, cur_file_name))
+        if rel_path == 'std':
+            return 'std'
+        return str(Path(base_dir, rel_path))
 
-def __check_for_errors(compiler_output):
-    # TODO: missing output folder: 
-    # "scryptc: /tmp/scryptlib/stdin_asm.json: openFile: does not exist (No such file or directory)"
-    if compiler_output.startswith('Error:'):
-        match = re.search(INTERNAL_ERR_REG, compiler_output)
-        if match:
-            raise InternalError('Compiler internal error: {}'.format(match.group('message')))
+    @staticmethod
+    def __ast_filepaths_to_uris(asts):
+        keys = list(asts.keys())
+        for key in keys:
+            if not key == 'stdin':
+                source_uri = Path(key).absolute().as_uri()
+                asts[source_uri] = asts.pop(key)
 
-        syntax_err_entries = []
-        for match in re.finditer(SYNTAX_ERR_REG, compiler_output):
+    @staticmethod
+    def __load_json(file_json):
+        with open(file_json, 'r', encoding='utf-8') as f:
+            obj = json.load(f)
+        return obj
+
+    @staticmethod
+    def __ast_get_aliases(asts):
+        res = []
+        for ast in asts.values():
+            for alias in ast['alias']:
+                res.append({
+                    'name': alias['alias'],
+                    'type': alias['type']
+                    })
+        return res
+
+    @staticmethod
+    def __ast_get_static_const_int_declarations(asts):
+        res = dict()
+        for ast in asts.values():
+            contracts = ast['contracts']
+            for contract in contracts:
+                contract_name = contract['name']
+                for static in contract['statics']:
+                    if not static['const'] or static['expr']['nodeType'] != 'IntLiteral':
+                        continue
+                    name = '{}.{}'.format(contract_name, static['name'])
+                    value = static['expr']['value']
+                    res[name] = int(value)
+        return res
+
+    @staticmethod
+    def __ast_get_abi_declaration(ast, aliases, static_int_consts):
+        main_contract = ast['contracts'][-1]
+        if not main_contract:
+            return { 'contract': '', 'abi': [] }
+
+        main_contract_name = main_contract['name']
+        interfaces = CompilerWrapper.__get_public_function_declarations(main_contract)
+        constructor = CompilerWrapper.__get_constructor_declaration(main_contract)
+        interfaces.append(constructor)
+
+        for interface in interfaces:
+            for param in interface['params']:
+                p_type = CompilerWrapper.__resolve_abi_param_type(
+                            main_contract_name,
+                            param['type'], 
+                            aliases,
+                            static_int_consts
+                            )
+                param['type'] = p_type
+
+        return { 'contract': main_contract_name, 'abi': interfaces }
+
+    @staticmethod
+    def __ast_get_struct_declarations(ast_root, dependency_asts):
+        res = []
+        all_asts = [ast_root]
+        for key in dependency_asts.keys():
+            all_asts.append(dependency_asts[key])
+
+        for ast in all_asts:
+            for struct in ast['structs']:
+                name = struct['name']
+                params = []
+                for field in struct['fields']:
+                    p_name = field['name']
+                    p_type = field['type']
+                    params.append({ 'name': p_name, 'type': p_type })
+                res.append({ 'name': name, 'params': params })
+        return res
+
+    @staticmethod
+    def __get_public_function_declarations(contract):
+        res = []
+        pub_index = 0
+        functions = contract['functions']
+        for function in functions:
+            if function['visibility'] == 'Public':
+               abi_type = 'function'
+               name = function['name'] 
+               if function['nodeType'] == 'Constructor':
+                   index = None
+               else:
+                   index = pub_index
+                   pub_index += 1
+               params = []
+               for param in function['params']:
+                   p_name = param['name']
+                   p_type = param['type']
+                   params.append({ 'name': p_name, 'type': p_type })
+
+               abi_entity = {
+                    'type': abi_type,
+                    'name': name,
+                    'index': index,
+                    'params': params
+                    }
+               res.append(abi_entity)
+        return res
+
+    @staticmethod
+    def __get_constructor_declaration(contract):
+        constructor = contract['constructor']   # Explicit constructor
+        properties = contract['properties']     # Implicit constructor
+        params = []
+        if constructor:
+            for param in constructor['params']:
+                p_name = param['name']
+                p_type = param['type']
+                params.append({ 'name': p_name, 'type': p_type })
+        elif properties:
+            for prop in properties:
+                p_name = param['name'].replace('this.', '')
+                p_type = param['type']
+                params.append({ 'name': p_name, 'type': p_type })
+        return {'type': 'constructor', 'params': params}
+
+    @staticmethod
+    def __resolve_abi_param_type(contract_name, type_str, aliases, static_int_consts):
+        resolved_type = type_str
+        if utils.is_array_type(type_str):
+            resolved_type = CompilerWrapper.__resolve_array_type_w_const_int(contract_name, 
+                    resolved_type, static_int_consts)
+        resolved_type = utils.resolve_type(type_str, aliases)
+
+        if utils.is_struct_type(resolved_type):
+            return utils.get_struct_name_by_type(resolved_type)
+        elif utils.is_array_type(resolved_type):
+            elem_type_name, array_sizes = utils.factorize_array_type_str(type_str)
+            if utils.is_struct_type(elem_type_name):
+                elem_type_name = utils.get_struct_name_by_type(type_str)
+            return utils.to_literal_array_type(elem_type_name, array_sizes)
+
+        return resolved_type
+
+    @staticmethod
+    def __resolve_array_type_w_const_int(contract_name, type_str, static_int_consts):
+        # Resolves array declaration string with static constants as sizes.
+        # e.g. 'int[N][2]' -> 'int[5][2]'
+        elem_type_name, array_sizes = utils.factorize_array_type_str(type_str)
+
+        # Resolve all constants to integers.
+        sizes = []
+        for size_str in array_sizes:
+            if size_str.isdigit():
+                sizes.append(int(size_str))
+            else:
+                if size_str.find('.') > 0:
+                    sizes.append(static_int_consts[size_str])
+                else:
+                    sizes.append(static_int_consts['{}.{}'.format(contract_name, size_str)])
+
+        return utils.to_literal_array_type(elem_type_name, sizes)
+
+    @staticmethod
+    def __check_for_errors(compiler_output):
+        # TODO: missing output folder: 
+        # "scryptc: /tmp/scryptlib/stdin_asm.json: openFile: does not exist (No such file or directory)"
+        if compiler_output.startswith('Error:'):
+            match = re.search(INTERNAL_ERR_REG, compiler_output)
+            if match:
+                raise InternalError('Compiler internal error: {}'.format(match.group('message')))
+
+            syntax_err_entries = []
+            for match in re.finditer(SYNTAX_ERR_REG, compiler_output):
+                file_path = match.group('filePath')
+                got = match.group('unexpected')
+                expected = match.group('expecting')
+                line = int(match.group('line'))
+                col = int(match.group('column'))
+                message = match.group('message')
+                message_full = match.string
+
+                error_entry = SyntaxErrorEntry(message, message_full, got, expected, (line, col), file_path)
+                syntax_err_entries.append(error_entry)
+
+            if len(syntax_err_entries) > 0:
+                raise SyntaxError(syntax_err_entries)
+
+            semantic_err_entries = []
+            for match in re.finditer(SEMANTIC_ERR_REG, compiler_output):
+                file_path = match.group('filePath')
+                line = int(match.group('line'))
+                col = int(match.group('column'))
+                line1 = int(match.group('line1'))
+                col1 = int(match.group('column1'))
+                position_range = [(line, col), (line1, col1)]
+                message = match.group('message')
+                message_sub_reg = 'Symbol `(?P<varName>\w+)` already defined at (?P<fileIndex>[^\s]+)' \
+                        ':(?P<line>\d+):(?P<column>\d+):(?P<line1>\d+):(?P<column1>\d+)'
+                message = re.sub(message_sub_reg, 'Symbol `$1` already defined at $3:$4:$5:$6', message)
+                message_full = match.string
+
+                error_entry = SemanticErrorEntry(message, message_full, position_range, file_path)
+                semantic_err_entries.append(error_entry)
+
+            if len(semantic_err_entries) > 0:
+                raise SemanticError(semantic_err_entries)
+
+            raise Exception(compiler_output)
+
+    @staticmethod
+    def __get_warnings(compiler_output):
+        warnings = []
+        for match in  re.finditer(WARNING_REG, compiler_output):
             file_path = match.group('filePath')
-            got = match.group('unexpected')
-            expected = match.group('expecting')
-            line = int(match.group('line'))
-            col = int(match.group('column'))
-            message = match.group('message')
-            message_full = match.string
 
-            error_entry = SyntaxErrorEntry(message, message_full, got, expected, (line, col), file_path)
-            syntax_err_entries.append(error_entry)
-
-        if len(syntax_err_entries) > 0:
-            raise SyntaxError(syntax_err_entries)
-
-        semantic_err_entries = []
-        for match in re.finditer(SEMANTIC_ERR_REG, compiler_output):
-            file_path = match.group('filePath')
             line = int(match.group('line'))
             col = int(match.group('column'))
             line1 = int(match.group('line1'))
             col1 = int(match.group('column1'))
-            position_range = [(line, col), (line1, col1)]
+
             message = match.group('message')
-            message_sub_reg = 'Symbol `(?P<varName>\w+)` already defined at (?P<fileIndex>[^\s]+)' \
-                    ':(?P<line>\d+):(?P<column>\d+):(?P<line1>\d+):(?P<column1>\d+)'
-            message = re.sub(message_sub_reg, 'Symbol `$1` already defined at $3:$4:$5:$6', message)
-            message_full = match.string
+            message_sub_reg = 'Variable `(?<varName>\w+)` shadows existing binding at ' \
+                    '(?<fileIndex>[^\s]+):(?<line>\d+):(?<column>\d+):(?<line1>\d+):(?<column1>\d+)'
+            message = re.sub(message_sub_reg, 'Variable `$1` shadows existing binding at $3:$4:$5:$6', message)
 
-            error_entry = SemanticErrorEntry(message, message_full, position_range, file_path)
-            semantic_err_entries.append(error_entry)
-
-        if len(semantic_err_entries) > 0:
-            raise SemanticError(semantic_err_entries)
-
-        raise Exception(compiler_output)
-
-
-def __get_warnings(compiler_output):
-    warnings = []
-    for match in  re.finditer(WARNING_REG, compiler_output):
-        file_path = match.group('filePath')
-
-        line = int(match.group('line'))
-        col = int(match.group('column'))
-        line1 = int(match.group('line1'))
-        col1 = int(match.group('column1'))
-
-        message = match.group('message')
-        message_sub_reg = 'Variable `(?<varName>\w+)` shadows existing binding at ' \
-                '(?<fileIndex>[^\s]+):(?<line>\d+):(?<column>\d+):(?<line1>\d+):(?<column1>\d+)'
-        message = re.sub(message_sub_reg, 'Variable `$1` shadows existing binding at $3:$4:$5:$6', message)
-
-        warnings.append((file_path, [(line, col), (line1,col1)], message))
-    return warnings
+            warnings.append((file_path, [(line, col), (line1,col1)], message))
+        return warnings
 
 

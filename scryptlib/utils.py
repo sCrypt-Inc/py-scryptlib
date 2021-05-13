@@ -3,7 +3,7 @@ import errno
 import re
 from pathlib import Path
 
-from . import compiler_wrapper
+from scryptlib.compiler_wrapper import CompilerWrapper
 from . import scrypt_types
 
 
@@ -30,14 +30,14 @@ def compile_contract(contract, out_dir=None, compiler_bin=None, from_string=Fals
     elif not out_dir.is_dir():
         raise Exception('File "{}" is not a directory.'.format(str(out_dir)))
 
-    compile_args = {
-            'desc': True,
-            'debug': True,
-            'source_map': True,
-            'out_dir': out_dir,
-            'compiler_bin': compiler_bin
-        }
-    return compiler_wrapper.compile(contract, **compile_args)
+    compiler_wrapper = CompilerWrapper(
+            desc=True,
+            debug=True,
+            source_map=True,
+            out_dir=out_dir,
+            compiler_bin=compiler_bin
+            )
+    return compiler_wrapper.compile(contract)
 
 
 def find_compiler():
