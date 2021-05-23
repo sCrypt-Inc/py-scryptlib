@@ -12,7 +12,7 @@ from . import utils
 # TODO: Decide whether to keep stuff like ABI entites as dicts, or create a class for them.
 
 
-CURRENT_CONTRACT_DESCRIPTION_VERSION = 3;
+CURRENT_CONTRACT_DESCRIPTION_VERSION = 3
 
 
 SYNTAX_ERR_REG = '(?P<filePath>[^\s]+):(?P<line>\d+):(?P<column>\d+):\n([^\n]+\n){3}' \
@@ -24,6 +24,17 @@ WARNING_REG = 'Warning:(\s|\n)*(?P<filePath>[^\s]+):(?P<line>\d+):(?P<column>\d+
         '(?P<line1>\d+):(?P<column1>\d+):*\n(?P<message>[^\n]+)\n'
 SOURCE_REG = '^(?P<fileIndex>-?\d+):(?P<line>\d+):(?P<col>\d+):(?P<endLine>\d+):' \
         '(?P<endCol>\d+)(#(?P<tagStr>.+))?'
+
+
+class DebugModeTag(Enum):
+    FUNC_START = 'F0'
+    FUNC_END = 'F1'
+    LOOP_START = 'L0'
+
+
+class ABIEntityType(Enum):
+    FUNCTION = 'function'
+    CONSTRUCTOR = 'constructor'
 
 
 class SyntaxErrorEntry:
@@ -67,19 +78,22 @@ class InternalError(Exception):
 
 
 class CompilerResult:
+
     def __init__(self,
             asm=[],
             ast=None,
             dep_ast=None,
-            abi=None,
+            abi=[],
             warnings=[],
             compiler_version=None,
             contract=None,
             md5=None,
-            structs=None,
-            alias=None,
+            structs=[],
+            alias=[],
             source_file=None,
-            auto_typed_vars=[]):
+            auto_typed_vars=[],
+            source_md5=None,
+            compiler_out_asm=None):
         self.asm = asm
         self.ast = ast
         self.dep_ast = dep_ast
@@ -92,12 +106,38 @@ class CompilerResult:
         self.alias = alias
         self.source_file = source_file
         self.auto_typed_vars = auto_typed_vars
+        self.source_md5 = source_md5
+        self.compiler_out_asm = compiler_out_asm
 
+    def to_desc(self, source_map=False):
+        res = {
+                'version': CURRENT_CONTRACT_DESCRIPTION_VERSION,
+                'compilerVersion': self.compiler_version,
+                'contract': self.contract,
+                'md5': self.source_md5,
+                'structs': self.structs,
+                'alias': self.alias,
+                'abi': self.abi,
+                'file': '',
+                'asm': CompilerWrapper.get_asm_as_string(self.asm),
+                'sources': [],
+                'sourceMap': [],
+                'md5': self.source_md5
+            }
 
-class DebugModeTag(Enum):
-    FUNC_START = 'F0'
-    FUNC_END = 'F1'
-    LOOP_START = 'L0'
+        if source_map:
+            output = self.compiler_out_asm['output']
+            if len(output) == 0:
+                return res
+            if 'src' not in output[0]:
+                raise Exception('Missing source map data in compiler results. Run compiler with debug flag.')
+            sources = self.compiler_out_asm['sources']
+            sources_fullpath = CompilerWrapper.get_sources_fullpath(sources)
+            res['file'] = self.source_file
+            res['sources'] = sources_fullpath
+            res['sourceMap'] = [ item['src'] for item in self.compiler_out_asm['output'] ]
+
+        return res
 
 
 class CompilerWrapper:
@@ -110,7 +150,6 @@ class CompilerWrapper:
                  optimize = False,
                  ast = False,
                  desc = False,
-                 source_map = False,
                  st = datetime.now(),
                  timeout = 1200,
                  out_files = dict(),
@@ -123,13 +162,12 @@ class CompilerWrapper:
         self.optimize = optimize
         self.ast = ast
         self.desc = desc
-        self.source_map = source_map
         self.st = st
         self.timeout = timeout
         self.out_files = out_files
         self.cmd_args = cmd_args
         self.cwd = cwd
-        self._compiler_version = self.__get_compiler_version(compiler_bin)
+        self.compiler_version = self.get_compiler_version(compiler_bin)
 
     def compile(self, source):
         from_file = isinstance(source, Path)
@@ -156,10 +194,10 @@ class CompilerWrapper:
         res = res.replace(b'\r\n', b'\n').decode('utf-8')
 
         # Check compiler output for errors and raise exception if needed.
-        self.__check_for_errors(res)
+        self.check_for_errors(res)
 
         # Collect warnings from compiler output.
-        warnings = self.__get_warnings(res)
+        warnings = self.get_warnings(res)
 
         compiler_result_params = dict()
         out_files = dict()
@@ -167,7 +205,7 @@ class CompilerWrapper:
         if self.ast or self.desc:
             out_file_ast = self.out_dir / '{}_ast.json'.format(source_prefix)
             out_files['ast'] = out_file_ast
-            ast_obj = self.__load_json(out_file_ast)
+            ast_obj = self.load_json(out_file_ast)
             ast_res = self.__collect_results_ast(ast_obj, source_uri)
             compiler_result_params.update(ast_res)
             compiler_result_params['source_file'] = source_uri
@@ -175,27 +213,25 @@ class CompilerWrapper:
         if self.asm or self.desc:
             out_file_asm = self.out_dir / '{}_asm.json'.format(source_prefix)
             out_files['asm'] = out_file_asm
-            asm_obj = self.__load_json(out_file_asm)
+            asm_obj = self.load_json(out_file_asm)
+            compiler_result_params['compiler_out_asm'] = asm_obj
             asm_res = self.__collect_results_asm(asm_obj, source)
             compiler_result_params.update(asm_res)
+
+        compiler_result_params['compiler_version'] = self.compiler_version
+        compiler_result_params['source_md5'] = self.get_source_md5(source)
+        compiler_res = CompilerResult(**compiler_result_params)
 
         if self.desc:
             out_file_desc = self.out_dir / '{}_desc.json'.format(source_prefix)
             out_files['desc'] = out_file_desc
 
-            desc = self.__construct_desc(source,
-                        compiler_result_params['contract'],
-                        compiler_result_params['source_file'],
-                        compiler_result_params['asm'],
-                        asm_obj,
-                        structs = compiler_result_params.get('structs', []),
-                        alias = compiler_result_params.get('alias', []),
-                        abi = compiler_result_params.get('abi', [])
-                    )
+            desc = compiler_res.to_desc(source_map=self.debug)
 
             with open(out_file_desc, 'w', encoding='utf-8') as f:
                 json.dump(desc, f, indent=4)
 
+        # TODO: Clean up out files.
         return CompilerResult(**compiler_result_params)
 
     def __assemble_compiler_cmd(self, source, from_file):
@@ -220,24 +256,24 @@ class CompilerWrapper:
     def __collect_results_ast(self, ast_obj, source_uri):
         res = dict()
         # Change source file paths to URIs
-        self.__ast_filepaths_to_uris(ast_obj)
+        self.ast_filepaths_to_uris(ast_obj)
         ast_root = ast_obj[source_uri]
-        static_int_consts = self.__ast_get_static_const_int_declarations(ast_obj)
-        aliases = self.__ast_get_aliases(ast_obj)
+        static_int_consts = self.ast_get_static_const_int_declarations(ast_obj)
+        aliases = self.ast_get_aliases(ast_obj)
         res['alias'] = aliases
         res['ast'] = ast_root
-        abi_declaration = self.__ast_get_abi_declaration(ast_root, aliases, static_int_consts)
+        abi_declaration = self.ast_get_abi_declaration(ast_root, aliases, static_int_consts)
         res['abi'] = abi_declaration['abi']
         del ast_obj[source_uri]
         res['dep_ast'] = ast_obj
         res['contract'] = abi_declaration['contract']
-        res['structs'] = self.__ast_get_struct_declarations(ast_root, ast_obj)
+        res['structs'] = self.ast_get_struct_declarations(ast_root, ast_obj)
         return res
 
     def __collect_results_asm(self, asm_obj, source):
         res = dict()
         sources = asm_obj['sources']
-        sources_fullpath = self.__get_sources_fullpath(sources)
+        sources_fullpath = self.get_sources_fullpath(sources)
 
         asm_items = []
         for output in asm_obj['output']:
@@ -307,49 +343,20 @@ class CompilerWrapper:
 
         return res
 
-    def __construct_desc(self, source, contract, source_file, asm, asm_out_obj,
-            structs=list(), alias=list(), abi=list()):
-        source_md5 = self.__get_source_md5(source)
-        res = {
-                'version': CURRENT_CONTRACT_DESCRIPTION_VERSION,
-                'compilerVersion': self._compiler_version,
-                'contract': contract,
-                'md5': source_md5,
-                'structs': structs,
-                'alias': alias,
-                'abi': abi,
-                'file': '',
-                'asm': self.__get_asm_as_string(asm),
-                'sources': [],
-                'sourceMap': []
-            }
-
-        if self.debug and self.source_map and asm:
-            sources = asm_out_obj['sources']
-            sources_fullpath = self.__get_sources_fullpath(sources)
-            res['file'] = source_file
-            res['sources'] = sources_fullpath
-            res['sourceMap'] = [ item['src'] for item in asm_out_obj['output'] ]
-
-        res['compiler_version'] = self._compiler_version
-        res['md5'] = source_md5
-
-        return res
-
     @staticmethod
-    def __get_compiler_version(compiler_bin):
+    def get_compiler_version(compiler_bin):
         res = subprocess.run([compiler_bin, 'version'], stdout=subprocess.PIPE).stdout
         return res.decode(encoding='utf-8').split()[1]
 
     @staticmethod
-    def __get_source_md5(source):
+    def get_source_md5(source):
         if isinstance(source, Path):
             with open(source, 'r', encoding='utf-8') as f:
                 source = f.read()
         return hashlib.md5(source.encode(encoding='utf-8')).hexdigest()
 
     @staticmethod
-    def __get_sources_fullpath(sources):
+    def get_sources_fullpath(sources):
         res = []
         for source in sources:
             if source != 'stdin' and source != 'std':
@@ -359,14 +366,14 @@ class CompilerWrapper:
         return res
 
     @staticmethod
-    def __get_asm_as_string(asm_objs):
+    def get_asm_as_string(asm_objs):
         res_buff = []
         for item in asm_objs:
            res_buff.append(item['opcode'].strip()) 
         return ' '.join(res_buff)
 
     @staticmethod
-    def __get_full_source_path(rel_path, base_dir, cur_file_name):
+    def get_full_source_path(rel_path, base_dir, cur_file_name):
         if rel_path.endswith('stdin'):
             return str(Path(base_dir, cur_file_name))
         if rel_path == 'std':
@@ -374,7 +381,7 @@ class CompilerWrapper:
         return str(Path(base_dir, rel_path))
 
     @staticmethod
-    def __ast_filepaths_to_uris(asts):
+    def ast_filepaths_to_uris(asts):
         keys = list(asts.keys())
         for key in keys:
             if not key == 'stdin':
@@ -382,13 +389,13 @@ class CompilerWrapper:
                 asts[source_uri] = asts.pop(key)
 
     @staticmethod
-    def __load_json(file_json):
+    def load_json(file_json):
         with open(file_json, 'r', encoding='utf-8') as f:
             obj = json.load(f)
         return obj
 
     @staticmethod
-    def __ast_get_aliases(asts):
+    def ast_get_aliases(asts):
         res = []
         for ast in asts.values():
             for alias in ast['alias']:
@@ -399,7 +406,7 @@ class CompilerWrapper:
         return res
 
     @staticmethod
-    def __ast_get_static_const_int_declarations(asts):
+    def ast_get_static_const_int_declarations(asts):
         res = dict()
         for ast in asts.values():
             contracts = ast['contracts']
@@ -414,19 +421,19 @@ class CompilerWrapper:
         return res
 
     @staticmethod
-    def __ast_get_abi_declaration(ast, aliases, static_int_consts):
+    def ast_get_abi_declaration(ast, aliases, static_int_consts):
         main_contract = ast['contracts'][-1]
         if not main_contract:
             return { 'contract': '', 'abi': [] }
 
         main_contract_name = main_contract['name']
-        interfaces = CompilerWrapper.__get_public_function_declarations(main_contract)
-        constructor = CompilerWrapper.__get_constructor_declaration(main_contract)
+        interfaces = CompilerWrapper.get_public_function_declarations(main_contract)
+        constructor = CompilerWrapper.get_constructor_declaration(main_contract)
         interfaces.append(constructor)
 
         for interface in interfaces:
             for param in interface['params']:
-                p_type = CompilerWrapper.__resolve_abi_param_type(
+                p_type = CompilerWrapper.resolve_abi_param_type(
                             main_contract_name,
                             param['type'], 
                             aliases,
@@ -437,7 +444,7 @@ class CompilerWrapper:
         return { 'contract': main_contract_name, 'abi': interfaces }
 
     @staticmethod
-    def __ast_get_struct_declarations(ast_root, dependency_asts):
+    def ast_get_struct_declarations(ast_root, dependency_asts):
         res = []
         all_asts = [ast_root]
         for key in dependency_asts.keys():
@@ -455,7 +462,7 @@ class CompilerWrapper:
         return res
 
     @staticmethod
-    def __get_public_function_declarations(contract):
+    def get_public_function_declarations(contract):
         res = []
         pub_index = 0
         functions = contract['functions']
@@ -484,7 +491,7 @@ class CompilerWrapper:
         return res
 
     @staticmethod
-    def __get_constructor_declaration(contract):
+    def get_constructor_declaration(contract):
         constructor = contract['constructor']   # Explicit constructor
         properties = contract['properties']     # Implicit constructor
         params = []
@@ -501,10 +508,10 @@ class CompilerWrapper:
         return {'type': 'constructor', 'params': params}
 
     @staticmethod
-    def __resolve_abi_param_type(contract_name, type_str, aliases, static_int_consts):
+    def resolve_abi_param_type(contract_name, type_str, aliases, static_int_consts):
         resolved_type = type_str
         if utils.is_array_type(type_str):
-            resolved_type = CompilerWrapper.__resolve_array_type_w_const_int(contract_name, 
+            resolved_type = CompilerWrapper.resolve_array_type_w_const_int(contract_name, 
                     resolved_type, static_int_consts)
         resolved_type = utils.resolve_type(type_str, aliases)
 
@@ -519,7 +526,7 @@ class CompilerWrapper:
         return resolved_type
 
     @staticmethod
-    def __resolve_array_type_w_const_int(contract_name, type_str, static_int_consts):
+    def resolve_array_type_w_const_int(contract_name, type_str, static_int_consts):
         # Resolves array declaration string with static constants as sizes.
         # e.g. 'int[N][2]' -> 'int[5][2]'
         elem_type_name, array_sizes = utils.factorize_array_type_str(type_str)
@@ -538,7 +545,7 @@ class CompilerWrapper:
         return utils.to_literal_array_type(elem_type_name, sizes)
 
     @staticmethod
-    def __check_for_errors(compiler_output):
+    def check_for_errors(compiler_output):
         # TODO: missing output folder: 
         # "scryptc: /tmp/scryptlib/stdin_asm.json: openFile: does not exist (No such file or directory)"
         if compiler_output.startswith('Error:'):
@@ -585,7 +592,7 @@ class CompilerWrapper:
             raise Exception(compiler_output)
 
     @staticmethod
-    def __get_warnings(compiler_output):
+    def get_warnings(compiler_output):
         warnings = []
         for match in  re.finditer(WARNING_REG, compiler_output):
             file_path = match.group('filePath')

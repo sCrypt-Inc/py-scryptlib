@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 from scryptlib.compiler_wrapper import CompilerWrapper
-from . import scrypt_types
+from scryptlib.types import ScryptType, Bool, Int, Struct
 
 
 # TODO: Write docstrings for functions.
@@ -33,7 +33,6 @@ def compile_contract(contract, out_dir=None, compiler_bin=None, from_string=Fals
     compiler_wrapper = CompilerWrapper(
             desc=True,
             debug=True,
-            source_map=True,
             out_dir=out_dir,
             compiler_bin=compiler_bin
             )
@@ -127,4 +126,108 @@ def factorize_array_type_str(type_str):
         array_sizes.append(match.group(1))
     elem_type_name = type_str.split('[')[0]
     return elem_type_name, array_sizes
+
+
+def check_array(obj_list, elem_type, array_sizes):
+    if not isinstance(obj_list, list):
+        return False
+
+    if array_sizes[0] != len(obj_list):
+        return False
+
+    for elem in obj_list:
+        if isinstance(elem, list):
+            if not check_array(elem, elem_type, array_sizes[1:]):
+                return False
+        else:
+            scrypt_type = get_scrypt_type(obj)
+            if not (scrypt_type == elem_type and len(array_sizes) == 1):
+                return False
+
+    return True
+
+
+def get_scrypt_type(obj):
+    if isinstance(obj, ScryptType):
+        return obj.final_type
+
+    if isinstance(obj, bool):
+        return 'bool'
+
+    if isinstance(obj, int):
+        return 'int'
+
+    raise Exception('Cannot parse sCrypt type of object "{}".'.format(type(obj)))
+
+#def parse_literal(literal):
+#    # Boolean
+#    if literal == 'false':
+#        return ['OP_FALSE', False, Bool]
+#    if literal == 'true':
+#        return ['OP_TRUE', True, Bool]
+#
+#    # Hexadecimal integers
+#    m = re.match('^(0x[0-9a-fA-F]+)$', literal)
+#    if m:
+#        return [
+
+def flatten_array(obj_list, name, resolved_type):
+    assert isinstance(obj_list, list)
+
+    elem_type, array_sizes = factorize_array_type_str(resolved_type)
+
+    res = []
+    for idx, obj in obj_list:
+        if isinstance(obj, bool):
+            obj = Bool(obj)
+        elif isinstance(obj, int):
+            obj = Int(obj)
+        elif isinstance(obj, list):
+            res.append(flatten_array(obj, '{}[{}]'.format(name, idx), sub_array_type(resolved_type)))
+        elif isinstance(obj, Struct):
+            res.append(return flatten_struct(obj, '{}[{}]'.format(name, idx)))
+        else:
+            res.append({
+                'value': obj,
+                'name': '{}{}'.format(idx, subscript(idx, array_sizes)),
+                'type': elem_type
+                })
+    return res
+
+
+def flatten_struct(obj, name):
+    assert isinstance(obj_list, Struct)
+
+    keys = obj.get_members()
+    res = []
+    for key in keys:
+        member = obj.member_by_key(key)
+        if isinstance(member, Struct):
+            res.append(flatten_struct(member, '{}.{}'.format(name, key)))
+        elif isinstance(member, list):
+            resolved_type = obj.get_member_ast_final_type(key)
+            res.append(flatten_array(member, '{}.{}'.format(name, key), resolved_type))
+        else:
+            res.append({
+                'value': member,
+                'name': '{}.{}'.format(name, key),
+                'type': member.type
+                })
+    return res
+
+
+def sub_array_type(type_str):
+    elem_type, array_sizes = factorize_array_type_str(type_str)
+    return to_literal_array_type(elem_type, array_sizes[1:])
+
+
+#def int_str_to_asm(str_int):
+#    m0 = re.match('^(-?\d+)$', str_int)
+#    m1 = re.match('^0x([0-9a-fA-F]+)$', str_int)
+#    if m0 or m1:
+#        number = BN(
+
+    
+
+
 
