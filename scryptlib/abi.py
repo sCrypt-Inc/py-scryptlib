@@ -1,8 +1,9 @@
 import re
+from bitcoinx import TxInputContext, InterpreterLimits, MinerPolicy, Script
 
 import scryptlib.utils as utils
 from scryptlib.compiler_wrapper import ABIEntityType
-from scryptlib.types import Struct
+from scryptlib.types import Struct, Int
 
 
 class ABICoder:
@@ -16,12 +17,12 @@ class ABICoder:
         c_params = self.__get_abi_params(abi_constructor)
 
         if len(args) != len(c_params):
-            raise Exception('Wrong number of arguments pased to constructor.\
+            raise Exception('Wrong number of arguments passed to constructor.\
                     Expected {}, but got {}.'.format(len(c_params), len(args)))
 
         _c_params = []
         _args = []
-        for idx, param in enumerate(c_params.values()):
+        for idx, param in enumerate(c_params):
             arg = args[idx]
             resolved_type = utils.resolve_type(param['type'], self.alias)
             if utils.is_array_type(resolved_type):
@@ -43,17 +44,37 @@ class ABICoder:
                 for obj in flattened_struct:
                     _c_params.append({ 'name': obj['name'], 'type': obj['type'] })
                     _args.append(obj['value'])
+            else:
+                _c_params.append(param)
+                _args.append(arg)
 
-        finalized_asm = asm.copy()
-        for idx, param in enumerate(_c_params.values()):
+        finalized_asm = asm
+        for idx, param in enumerate(_c_params):
             if not '${}'.format(param['name']) in asm:
                 raise Exception('Missing "{}" contract constructor parameter in passed args.')
             param_regex = re.compile(escape_str_for_regex('${}'.format(param['name'])))
             finalized_asm = re.sub(param_regex, self.encode_param(_args[idx], param), finalized_asm)
         
-        # TODO
-        #return FunctionCall('constructor', args, { 'contract': contract, 'locking_script_asm': finalized_asm })
-        return False
+        return FunctionCall('constructor', args, contract, locking_script_asm=finalized_asm)
+
+    def encode_pub_function_call(self, contract, name, *args):
+        for entity in self.abi:
+            if entity['name'] == name:
+                if len(entity['params']) != len(args):
+                    raise Exception('Wrong number of arguments passed to function call "{}",\
+                            expected {}, but got {}.'.format(len(entity['params']), len(args)))
+                asm = self.encode_params(args, entity['params'])
+                if len(self.abi) > 2 and 'index' in entity:
+                    pub_func_index = entity['index']
+                    asm += ' {}'.format(Int(pub_func_index).asm)
+
+                return FunctionCall(name, args, contract, unlocking_script_asm=asm)
+
+    def encode_params(self, args, param_entities):
+        res = []
+        for idx, arg in enumerate(args):
+            res.append(self.encode_param(arg, param_entities[idx]))
+        return ' '.join(res)
 
     def encode_param(self, arg, param_entity):
         resolved_type = utils.resolve_type(param_entity['type'], self.alias)
@@ -61,7 +82,7 @@ class ABICoder:
             if isinstance(arg, list):
                 return self.encode_param_array(arg, param_entity)
             else:
-                scrypt_type = utils.get_scrypt_type(arg)
+                scrypt_type = arg.type_str
                 raise Exception('Expected parameter "{}" as "{}", but got "{}".'.format(param_entity['name'],
                                     resolved_type, scrypt_type))
         if utils.is_struct_type(resolved_type):
@@ -70,11 +91,11 @@ class ABICoder:
                     raise Exception('Expected struct of type "{}", but got struct of type "{}".'.format(
                                         param_entity['name'], resolved_type, arg.final_type))
             else:
-                scrypt_type = utils.get_scrypt_type(arg)
+                scrypt_type = arg.type_str
                 raise Exception('Expected parameter ""{}" as struct of type "{}", but got "{}".'.format(
                                         param_entity['name'], resolved_type, scrypt_type))
 
-        scrypt_type = utils.get_scrypt_type(arg)
+        scrypt_type = arg.type_str
         if resolved_type != scrypt_type:
             raise Exception('Wrong argument type, expected "{}" or "{}", but got "{}".'.format(final_type,
                                 param_entity['type'], scrypt_type))
@@ -84,7 +105,7 @@ class ABICoder:
         elif isinstance(arg, int):
             arg = Int(arg)
 
-        return arg.to_asm()
+        return arg.asm
 
     def encode_param_array(self, args, param_entity):
         if len(args) == 0:
@@ -103,7 +124,7 @@ class ABICoder:
 
         res_buff = []
         for arg in utils.flatten_array(args, param_entity['name'], resolved_type):
-            res_buff.append(self.encode_param(arg['value'], { 'name': arg['name'], 'type': arg['type'] })
+            res_buff.append(self.encode_param(arg['value'], { 'name': arg['name'], 'type': arg['type'] }))
         return ' '.join(res_buff)
 
     def abi_constructor(self):
@@ -117,6 +138,60 @@ class ABICoder:
     @staticmethod
     def __get_abi_params(abi_entity):
         return abi_entity.get('params', [])
+
+
+class FunctionCall:
+
+    def __init__(self, method_name, params, contract, locking_script_asm=None, unlocking_script_asm=None):
+        if not (locking_script_asm or unlocking_script_asm):
+            raise Exception('Binding locking_script_asm and unlocking_script_asm can\'t both be empty.')
+
+        self.contract = contract
+        self.locking_script_asm = locking_script_asm
+        self.unlocking_script_asm = unlocking_script_asm    # TODO: Make Script object instead of str.
+        self.method_name = method_name
+
+        self.args = []
+        for entity in self.contract.abi:
+            if (method_name == 'constructor' and entity['type'] == 'constructor') or \
+                    ('name' in entity and entity['name'] == method_name):
+                for idx, param in enumerate(entity['params']):
+                    self.args.append({
+                        'name': param['name'],
+                        'type': param['type'],
+                        'value': params[idx]
+                        })
+
+    def initialize(asm_var_values):
+        for key, val in asm_var_values.items():
+            this._locking_script_asm = re.sub('\\${}'.format(key), val, this._locking_script_asm)
+
+    def to_asm(self):
+        if self.unlocking_script_asm:
+            return self.unlocking_script_asm
+        if self.locking_script_asm:
+            return self.locking_script_asm
+
+    def verify(self, tx_input_context, interpreter_limits=None):
+        assert isinstance(tx_input_context, TxInputContext)
+        if not self.unlocking_script_asm:
+            raise Exception('Cannot verify function "{}". \
+                    FunctionCall object is missing unlocking_script_asm property.'.format(self.method_name))
+
+        if not interpreter_limits:
+            policies = [
+                # A fairly restrictive policy
+                MinerPolicy(100_000, 64, 20_000, 1_000, 16),
+                # A loose policy
+                MinerPolicy(10_000_000, 256, 10_000_000, 32_000, 256)
+            ]
+            interpreter_limits = InterpreterLimits(policies[1], is_genesis_enabled=True, is_consensus=True)
+
+        # Set unlock script for passed input context.
+        input_index = tx_input_context.input_index
+        tx_input_context.tx.inputs[input_index].script_sig = Script.from_asm(self.unlocking_script_asm)
+
+        return self.contract.run_verify(tx_input_context, interpreter_limits)
 
 
 def escape_str_for_regex(string):

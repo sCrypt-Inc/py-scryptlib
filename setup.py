@@ -32,5 +32,5 @@ setup(long_description=long_description,
       author='Kala',
       url='https://www.github.com/kala-tech/scryptlib-python',
       packages=['scryptlib'],
-      install_requires=['bitsv', 'bitcoinX']
+      install_requires=['bitcoinX']
      )

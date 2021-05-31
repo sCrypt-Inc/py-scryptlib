@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 from scryptlib.compiler_wrapper import CompilerWrapper
-from scryptlib.types import ScryptType, Bool, Int, Struct
+from scryptlib.types import ScryptType, Bool, Int, Struct, BASIC_TYPES, DOMAIN_SUBTYPES
 
 
 # TODO: Write docstrings for functions.
@@ -100,7 +100,7 @@ def resolve_type(type_str, aliases):
         if alias['name'] == type_str:
             return resolve_type(alias['type'], aliases)
 
-    if type_str in scrypt_types.BASIC_TYPES.union(scrypt_types.DOMAIN_SUBTYPES):
+    if type_str in BASIC_TYPES.union(DOMAIN_SUBTYPES):
         return type_str
     else:
         return 'struct {} {{}}'.format(type_str)
@@ -140,36 +140,12 @@ def check_array(obj_list, elem_type, array_sizes):
             if not check_array(elem, elem_type, array_sizes[1:]):
                 return False
         else:
-            scrypt_type = get_scrypt_type(obj)
+            scrypt_type = obj.type_str
             if not (scrypt_type == elem_type and len(array_sizes) == 1):
                 return False
 
     return True
 
-
-def get_scrypt_type(obj):
-    if isinstance(obj, ScryptType):
-        return obj.final_type
-
-    if isinstance(obj, bool):
-        return 'bool'
-
-    if isinstance(obj, int):
-        return 'int'
-
-    raise Exception('Cannot parse sCrypt type of object "{}".'.format(type(obj)))
-
-#def parse_literal(literal):
-#    # Boolean
-#    if literal == 'false':
-#        return ['OP_FALSE', False, Bool]
-#    if literal == 'true':
-#        return ['OP_TRUE', True, Bool]
-#
-#    # Hexadecimal integers
-#    m = re.match('^(0x[0-9a-fA-F]+)$', literal)
-#    if m:
-#        return [
 
 def flatten_array(obj_list, name, resolved_type):
     assert isinstance(obj_list, list)
@@ -185,7 +161,7 @@ def flatten_array(obj_list, name, resolved_type):
         elif isinstance(obj, list):
             res.append(flatten_array(obj, '{}[{}]'.format(name, idx), sub_array_type(resolved_type)))
         elif isinstance(obj, Struct):
-            res.append(return flatten_struct(obj, '{}[{}]'.format(name, idx)))
+            res.append(flatten_struct(obj, '{}[{}]'.format(name, idx)))
         else:
             res.append({
                 'value': obj,
@@ -219,15 +195,4 @@ def flatten_struct(obj, name):
 def sub_array_type(type_str):
     elem_type, array_sizes = factorize_array_type_str(type_str)
     return to_literal_array_type(elem_type, array_sizes[1:])
-
-
-#def int_str_to_asm(str_int):
-#    m0 = re.match('^(-?\d+)$', str_int)
-#    m1 = re.match('^0x([0-9a-fA-F]+)$', str_int)
-#    if m0 or m1:
-#        number = BN(
-
-    
-
-
 
