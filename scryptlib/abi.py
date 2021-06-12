@@ -55,7 +55,7 @@ class ABICoder:
             param_regex = re.compile(escape_str_for_regex('${}'.format(param['name'])))
             finalized_asm = re.sub(param_regex, self.encode_param(_args[idx], param), finalized_asm)
         
-        return FunctionCall('constructor', args, contract, locking_script_asm=finalized_asm)
+        return FunctionCall('constructor', args, contract, locking_script=Script.from_asm(finalized_asm))
 
     def encode_pub_function_call(self, contract, name, *args):
         for entity in self.abi:
@@ -68,7 +68,7 @@ class ABICoder:
                     pub_func_index = entity['index']
                     asm += ' {}'.format(Int(pub_func_index).asm)
 
-                return FunctionCall(name, args, contract, unlocking_script_asm=asm)
+                return FunctionCall(name, args, contract, unlocking_script=Script.from_asm(asm))
 
     def encode_params(self, args, param_entities):
         res = []
@@ -142,13 +142,13 @@ class ABICoder:
 
 class FunctionCall:
 
-    def __init__(self, method_name, params, contract, locking_script_asm=None, unlocking_script_asm=None):
-        if not (locking_script_asm or unlocking_script_asm):
+    def __init__(self, method_name, params, contract, locking_script=None, unlocking_script=None):
+        if not (locking_script or unlocking_script):
             raise Exception('Binding locking_script_asm and unlocking_script_asm can\'t both be empty.')
 
         self.contract = contract
-        self.locking_script_asm = locking_script_asm
-        self.unlocking_script_asm = unlocking_script_asm    # TODO: Make Script object instead of str.
+        self.locking_script = locking_script
+        self.unlocking_script = unlocking_script
         self.method_name = method_name
 
         self.args = []
@@ -162,21 +162,22 @@ class FunctionCall:
                         'value': params[idx]
                         })
 
-    def initialize(asm_var_values):
-        for key, val in asm_var_values.items():
-            this._locking_script_asm = re.sub('\\${}'.format(key), val, this._locking_script_asm)
+    #def initialize(asm_var_values):
+    #    for key, val in asm_var_values.items():
+    #        self._locking_script_asm = re.sub('\\${}'.format(key), val, this._locking_script_asm)
 
     def to_asm(self):
-        if self.unlocking_script_asm:
-            return self.unlocking_script_asm
-        if self.locking_script_asm:
-            return self.locking_script_asm
+        if self.unlocking_script:
+            return self.unlocking_script.to_asm(decode_sighash=True)
+        if self.locking_script:
+            return self.locking_script.to_asm(decode_sighash=True)
 
-    def verify(self, tx_input_context, interpreter_limits=None):
+    def verify(self, tx_input_context=utils.create_dummy_input_context(), interpreter_limits=None):
         assert isinstance(tx_input_context, TxInputContext)
-        if not self.unlocking_script_asm:
+
+        if not self.unlocking_script:
             raise Exception('Cannot verify function "{}". \
-                    FunctionCall object is missing unlocking_script_asm property.'.format(self.method_name))
+                    FunctionCall object is missing unlocking_script property.'.format(self.method_name))
 
         if not interpreter_limits:
             policies = [
@@ -189,7 +190,7 @@ class FunctionCall:
 
         # Set unlock script for passed input context.
         input_index = tx_input_context.input_index
-        tx_input_context.tx.inputs[input_index].script_sig = Script.from_asm(self.unlocking_script_asm)
+        tx_input_context.tx.inputs[input_index].script_sig = self.unlocking_script
 
         return self.contract.run_verify(tx_input_context, interpreter_limits)
 

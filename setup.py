@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
+import codecs
 from setuptools import setup
 from os import path
-import codecs
 
 
 def read(rel_path):

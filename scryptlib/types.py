@@ -51,7 +51,7 @@ class Int(ScryptType):
             return 'OP_1NEGATE'
         if self.value > 0 and self.value <= 16:
             return 'OP_{}'.format(self.value)
-        return Script.asm_word_to_bytes(str(self.value))[1:].hex()
+        return bitcoinx.push_int(self.value)[1:].hex()
 
 
 class Bool(ScryptType):
@@ -133,6 +133,8 @@ class Ripemd160(ScryptType):
     def __init__(self, value):
         assert isinstance(value, bytes)
         assert len(value) == 20
+
+        # TODO: make hash string also passable to constructor
         super().__init__(value)
 
     @property
@@ -194,6 +196,7 @@ class SigHashPreimage(ScryptType):
 
     @classmethod
     def from_tx(cls, tx, input_index, value, script_code, sighash):
+        # TODO: test
         if isinstance(sighash, SigHashType):
             # We need to pass the bitcoinX sighash vlaue primitive as a parameter.
             sighash = sighash.value

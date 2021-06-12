@@ -26,3 +26,7 @@ The SDK is used to convert script templates, produced by the sCrypt compiler, to
 TODO
 
 You can learn more about writing sCrypt smart contracts in the official [docs](https://scryptdoc.readthedocs.io/en/latest/intro.html).
+
+## Testing
+
+The SDK has a suite of unit tests, which you can run by executing the `pytest` command in the root of the project.

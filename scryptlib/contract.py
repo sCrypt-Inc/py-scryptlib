@@ -1,5 +1,5 @@
 import bitcoinx
-from bitcoinx import Script
+from bitcoinx import Script, OP_RETURN
 
 from scryptlib.compiler_wrapper import CompilerResult
 from scryptlib.abi import ABICoder
@@ -19,19 +19,27 @@ class ContractBase:
     def run_verify(self, tx_input_context, interpreter_limits):
         # Set output script to verify sciptSig against.
         tx_input_context.utxo.script_pubkey = self.locking_script
-
         return tx_input_context.verify_input(interpreter_limits)
+
+    def set_data_part(self, state):
+        if isinstance(state, bytes):
+            self._data_part = state
+        elif isinstance(state, str):
+            self._data_part = bytes.fromhex(state)
+        else:
+            raise NotImplementedError('Invalid object type for contract data part "{}"'.format(state.__class__))
 
     @property
     def locking_script(self):
-        ls_asm = self.scripted_constructor.to_asm()
-        if isinstance(self._data_part, str):
-            dp = self._data_part.strip()
-            if dp != '':
-                ls_asm += ' OP_RETURN {}'.format(dp)
-            else:
-                ls_asm += ' OP_RETURN'
-        return Script.from_asm(ls_asm)
+        ls = self.scripted_constructor.locking_script
+        if self._data_part and len(self._data_part) > 0:
+            ls << OP_RETURN
+            ls << self._data_part
+        return ls
+
+    @property
+    def code_part(self):
+        return self.scripted_constructor.locking_script << OP_RETURN
 
     @staticmethod
     def find_src_info():
@@ -48,14 +56,15 @@ def build_contract_class(desc):
 
     def constructor(self, *args):
         super(self.__class__, self).__init__()
-        contract_empty_constructor = False
-        for obj in self.abi:
-            if obj['type'] == 'constructor' and len(obj['params']) == 0:
-                contract_empty_constructor = True
-                break
+        #contract_empty_constructor = False
+        #for obj in self.abi:
+        #    if obj['type'] == 'constructor' and len(obj['params']) == 0:
+        #        contract_empty_constructor = True
+        #        break
 
-        if len(args) > 0 or contract_empty_constructor:
-            self.scripted_constructor = self.abi_coder.encode_constructor_call(self, self.asm, *args)
+        #if len(args) > 0 or contract_empty_constructor:
+        #    self.scripted_constructor = self.abi_coder.encode_constructor_call(self, self.asm, *args)
+        self.scripted_constructor = self.abi_coder.encode_constructor_call(self, self.asm, *args)
 
     @classmethod
     def from_asm(cls, asm):
