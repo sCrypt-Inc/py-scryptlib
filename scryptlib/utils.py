@@ -4,7 +4,10 @@ import re
 import os
 from pathlib import Path
 
-from bitcoinx import Script, Tx, TxInput, TxOutput, TxInputContext
+import bitcoinx
+from bitcoinx import Script, Tx, TxInput, TxOutput, TxInputContext, SigHash, \
+        pack_le_int32, pack_le_uint32, pack_le_uint16, ScriptError, pack_byte, Ops, \
+        int_to_le_bytes
 
 from scryptlib.compiler_wrapper import CompilerWrapper
 from scryptlib.types import ScryptType, Bool, Int, Struct, BASIC_TYPES, DOMAIN_SUBTYPES
@@ -22,7 +25,6 @@ def compile_contract(contract, out_dir=None, compiler_bin=None, from_string=Fals
             raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), contract.name)
     
     if not compiler_bin:
-        #raise Exception('Auto finding sCrypt compiler is not yet implemented.') # TODO
         compiler_bin = find_compiler()
 
     if not out_dir:
@@ -226,6 +228,57 @@ def flatten_struct(obj, name):
     return res
 
 
+def asm_to_script(asm):
+    '''
+    Creates instance of bitcoinx.Script, based on the ASM string, passed as a parameter.
+    This function is implemented because the ASM, that is being produced by the sCrypt compiler, has all data strings encoded in
+    hex form and bitcoinx.Script.from_asm() method doesn't support that format. This is due to the ambiguity of ASM encoding.
+    '''
+    res_buff = []
+    for word in asm.split():
+        if word.startswith('OP_'):
+           try:
+               opcode = Ops[word]
+           except KeyError:
+               raise ScriptError(f'unrecognized op code {word}') from None
+           res_buff.append(pack_byte(opcode))
+           continue
+        try:
+            item = bytes.fromhex(word)
+            res_buff.append(get_push_item(item))
+        except ValueError:
+            raise ScriptError(f'invalid pushdata {word}') from None
+    return Script(b''.join(res_buff))
+
+
+def get_push_item(item_bytes):
+    '''
+    Returns script bytes to push item on the stack. ALL data is length prefixed.
+    '''
+    dlen = len(item_bytes)
+    if dlen < Ops.OP_PUSHDATA1:
+        return pack_byte(dlen) + item_bytes
+    elif dlen <= 0xff:
+        return pack_byte(Ops.OP_PUSHDATA1) + pack_byte(dlen) + item_bytes
+    elif dlen <= 0xffff:
+        return pack_byte(Ops.OP_PUSHDATA2) + pack_le_uint16(dlen) + item_bytes
+    return pack_byte(Ops.OP_PUSHDATA4) + pack_le_uint32(dlen) + item_bytes
+
+
+def get_push_int(value):
+    '''Returns script bytes to push a numerical value to the stack.  Stack values are stored as
+    signed-magnitude little-endian numbers.
+    '''
+    if value == 0:
+        return b'\x01\x00'
+    item = int_to_le_bytes(abs(value))
+    if item[-1] & 0x80:
+        item += pack_byte(0x80 if value < 0 else 0x00)
+    elif value < 0:
+        item = item[:-1] + pack_byte(item[-1] | 0x80)
+    return get_push_item(item)
+        
+
 def sub_array_type(type_str):
     elem_type, array_sizes = factorize_array_type_str(type_str)
     return to_literal_array_type(elem_type, array_sizes[1:])
@@ -254,9 +307,35 @@ def create_dummy_input_context():
     return TxInputContext(curr_tx, input_idx, prev_out, is_utxo_after_genesis=True)
 
 
-def get_preimage(tx, input_index, utxo_value, script_code, sighash_type):
-    pass
+def get_preimage(tx, input_index, utxo_value, script_code, sighash):
+    txin = tx.inputs[input_index]
+    hash_prevouts = hash_sequence = hash_outputs = bitcoinx.consts.ZERO
+
+    sighash_not_single_none = sighash.base not in (SigHash.SINGLE, SigHash.NONE)
+    if not sighash.anyone_can_pay:
+        hash_prevouts = tx._hash_prevouts()
+        if sighash_not_single_none:
+            hash_sequence = tx._hash_sequence()
+    if sighash_not_single_none:
+        hash_outputs = tx._hash_outputs()
+    elif (sighash.base == SigHash.SINGLE and input_index < len(tx.outputs)):
+        hash_outputs = double_sha256(tx.outputs[input_index].to_bytes())
+
+    preimage = b''.join((
+        pack_le_int32(tx.version),
+        hash_prevouts,
+        hash_sequence,
+        txin.to_bytes_for_signature(utxo_value, script_code),
+        hash_outputs,
+        pack_le_uint32(tx.locktime),
+        pack_le_uint32(sighash),
+    ))
+    return preimage
 
 
-def get_preimage_from_input_context(context):
-    pass
+def get_preimage_from_input_context(context, sighash):
+    tx = context.tx
+    input_index = context.input_index
+    utxo_value = context.utxo.value
+    script_code = context.utxo.script_pubkey
+    return get_preimage(tx, input_index, utxo_value, script_code, sighash)

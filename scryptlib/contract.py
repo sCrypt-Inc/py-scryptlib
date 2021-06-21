@@ -16,10 +16,10 @@ class ContractBase:
         self.asm_args = asm_var_values
         self.scripted_constructor.initialize(asm_var_values)
 
-    def run_verify(self, tx_input_context, interpreter_limits):
-        # Set output script to verify sciptSig against.
-        tx_input_context.utxo.script_pubkey = self.locking_script
-        return tx_input_context.verify_input(interpreter_limits)
+    #def run_verify(self, tx_input_context, interpreter_limits):
+    #    # Set output script to verify sciptSig against.
+    #    tx_input_context.utxo.script_pubkey = self.locking_script
+    #    return tx_input_context.verify_input(interpreter_limits)
 
     def set_data_part(self, state):
         if isinstance(state, bytes):
@@ -33,8 +33,8 @@ class ContractBase:
     def locking_script(self):
         ls = self.scripted_constructor.locking_script
         if self._data_part and len(self._data_part) > 0:
-            ls << OP_RETURN
-            ls << self._data_part
+            ls = ls << OP_RETURN
+            ls = ls << Script(self._data_part)
         return ls
 
     @property

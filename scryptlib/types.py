@@ -1,5 +1,7 @@
+import scryptlib.utils as utils
+
 import bitcoinx
-from bitcoinx import Script
+from bitcoinx import Script, base58_decode_check
 
 
 BASIC_TYPES = {
@@ -47,9 +49,9 @@ class Int(ScryptType):
 
     @property
     def asm(self):
-        if self.value == 0:
+        if self.value == -1:
             return 'OP_1NEGATE'
-        if self.value > 0 and self.value <= 16:
+        if self.value >= 0 and self.value <= 16:
             return 'OP_{}'.format(self.value)
         return bitcoinx.push_int(self.value)[1:].hex()
 
@@ -131,10 +133,12 @@ class Ripemd160(ScryptType):
     type_str = 'Ripemd160'
 
     def __init__(self, value):
+        if isinstance(value, str):
+            value = base58_decode_check(value)[1:]
+
         assert isinstance(value, bytes)
         assert len(value) == 20
 
-        # TODO: make hash string also passable to constructor
         super().__init__(value)
 
     @property
@@ -191,17 +195,17 @@ class SigHashPreimage(ScryptType):
 
     def __init__(self, value):
         assert isinstance(value, bytes)
-        assert len(value) == 32
         super().__init__(value)
 
     @classmethod
-    def from_tx(cls, tx, input_index, value, script_code, sighash):
-        # TODO: test
-        if isinstance(sighash, SigHashType):
-            # We need to pass the bitcoinX sighash vlaue primitive as a parameter.
-            sighash = sighash.value
-        value = value.signature_hash(input_index, value, script_code, sighash)
-        return cls(value)
+    def from_tx(cls, tx, input_index, utxo_value, script_code, sighash):
+        preimage_bytes = scryptlib.utils.get_preimage(tx, input_index, script_code, sighash)
+        return cls(preimage_bytes)
+
+    @classmethod
+    def from_input_context(cls, context, sighash):
+        preimage_bytes = scryptlib.utils.get_preimage_from_input_context(context, sighash)
+        return cls(preimage_bytes)
 
     @property
     def asm(self):

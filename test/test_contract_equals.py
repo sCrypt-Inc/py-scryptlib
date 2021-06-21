@@ -20,9 +20,11 @@ def test_verify_correct():
     verify_result = contract_obj.equals(Int(EQUAL_VAL)).verify()
     assert verify_result == True
 
+
 def test_verify_incorrect0():
     verify_result = contract_obj.equals(Int(342768423)).verify()
     assert verify_result == False
+
 
 def test_verify_incorrect1():
     verify_result = contract_obj.equals(Int(-1232326327186381)).verify()

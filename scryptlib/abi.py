@@ -1,3 +1,4 @@
+import copy
 import re
 from bitcoinx import TxInputContext, InterpreterLimits, MinerPolicy, Script
 
@@ -55,7 +56,8 @@ class ABICoder:
             param_regex = re.compile(escape_str_for_regex('${}'.format(param['name'])))
             finalized_asm = re.sub(param_regex, self.encode_param(_args[idx], param), finalized_asm)
         
-        return FunctionCall('constructor', args, contract, locking_script=Script.from_asm(finalized_asm))
+        locking_script = utils.asm_to_script(finalized_asm) # TODO: Remove once sCrypt supports hex output.
+        return FunctionCall('constructor', args, contract, locking_script=locking_script)
 
     def encode_pub_function_call(self, contract, name, *args):
         for entity in self.abi:
@@ -68,7 +70,8 @@ class ABICoder:
                     pub_func_index = entity['index']
                     asm += ' {}'.format(Int(pub_func_index).asm)
 
-                return FunctionCall(name, args, contract, unlocking_script=Script.from_asm(asm))
+                unlocking_script = utils.asm_to_script(asm)   # TODO: Remove once sCrypt supports hex output.
+                return FunctionCall(name, args, contract, unlocking_script=unlocking_script)
 
     def encode_params(self, args, param_entities):
         res = []
@@ -162,17 +165,24 @@ class FunctionCall:
                         'value': params[idx]
                         })
 
-    #def initialize(asm_var_values):
-    #    for key, val in asm_var_values.items():
-    #        self._locking_script_asm = re.sub('\\${}'.format(key), val, this._locking_script_asm)
-
     def to_asm(self):
         if self.unlocking_script:
             return self.unlocking_script.to_asm(decode_sighash=True)
         if self.locking_script:
             return self.locking_script.to_asm(decode_sighash=True)
 
-    def verify(self, tx_input_context=utils.create_dummy_input_context(), interpreter_limits=None):
+    def verify(self, tx_input_context=utils.create_dummy_input_context(), interpreter_limits=None,
+            use_contract_script_pair=True):
+        '''
+        Evaluate lock and unlock script pair using the passed TxInputContext object.
+        Additionally an InterpreterLimits object can be passed to limit the scope of verification.
+
+        If not TxInputContext object is passed, a dummy context object gets created and used in the verification 
+        process.
+
+        If use_contract_script_pair is set to True (defaults to True), then evaluate the scriptPubKey and scriptSig
+        pair of the contract object, instead of the ones passed via the TxInputContext object.
+        '''
         assert isinstance(tx_input_context, TxInputContext)
 
         if not self.unlocking_script:
@@ -188,11 +198,29 @@ class FunctionCall:
             ]
             interpreter_limits = InterpreterLimits(policies[1], is_genesis_enabled=True, is_consensus=True)
 
+        # Make a deep copy of the passed TxInputContext object, because it may be modified from here on.
+        tx_input_context = copy.deepcopy(tx_input_context)
+
+        if use_contract_script_pair:
+            self.update_input_context_scripts(tx_input_context)
+
+        return tx_input_context.verify_input(interpreter_limits)
+
+    def update_input_context_scripts(self, tx_input_context):
+        '''
+        Updates the unlocking input script (scriptSig) and the matching UTXOs locking script (scriptPubKey)
+        to the unlocking script of this FunctionCall object and the locking script of the contract object it belongs to.
+
+        Notice, that the function doesn't create a copy of the context object, but rather just modifies it.
+        '''
         # Set unlock script for passed input context.
         input_index = tx_input_context.input_index
         tx_input_context.tx.inputs[input_index].script_sig = self.unlocking_script
 
-        return self.contract.run_verify(tx_input_context, interpreter_limits)
+        # Set utxo script to verify sciptSig against.
+        tx_input_context.utxo.script_pubkey = self.contract.locking_script
+
+        return tx_input_context
 
 
 def escape_str_for_regex(string):
