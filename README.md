@@ -1,6 +1,8 @@
 # scryptlib-python
 A Python SDK for [sCrypt](https://scrypt.io/).
 
+[![Build Status](https://travis-ci.com/github/kala-tech/scryptlib-python.svg?branch=master)](https://travis-ci.com/github/kala-tech/scryptlib-python)
+
 ## Installation
 
 To use the SDK, you need to get a copy of the [sCrypt compiler](https://scrypt.io/#download).
