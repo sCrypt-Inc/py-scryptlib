@@ -1,8 +1,10 @@
 import bitcoinx
 from bitcoinx import Script, OP_RETURN
 
+import scryptlib.utils as utils
 from scryptlib.compiler_wrapper import CompilerResult
 from scryptlib.abi import ABICoder
+from scryptlib.types import BASIC_SCRYPT_TYPES, Struct
 
 
 class ContractBase:
@@ -27,7 +29,7 @@ class ContractBase:
         elif isinstance(state, str):
             self._data_part = bytes.fromhex(state)
         else:
-            raise NotImplementedError('Invalid object type for contract data part "{}"'.format(state.__class__))
+            raise NotImplementedError('Invalid object type for contract data part "{}".'.format(state.__class__))
 
     @property
     def locking_script(self):
@@ -55,15 +57,9 @@ def build_contract_class(desc):
         desc = desc.to_desc()
 
     def constructor(self, *args):
-        super(self.__class__, self).__init__()
-        #contract_empty_constructor = False
-        #for obj in self.abi:
-        #    if obj['type'] == 'constructor' and len(obj['params']) == 0:
-        #        contract_empty_constructor = True
-        #        break
-
-        #if len(args) > 0 or contract_empty_constructor:
-        #    self.scripted_constructor = self.abi_coder.encode_constructor_call(self, self.asm, *args)
+        self.calls = dict()
+        self.asm_args = None
+        self._data_part = None
         self.scripted_constructor = self.abi_coder.encode_constructor_call(self, self.asm, *args)
 
     @classmethod
@@ -105,4 +101,106 @@ def build_contract_class(desc):
 
     return type('Contract', (ContractBase,), contract_class_attribs)
 
+
+def build_struct_classes(desc):
+    struct_classes = dict()
+    structs = desc['structs'] if 'structs' in desc else []
+    aliases = desc['alias'] if 'alias' in desc else []
+    final_type_resolver = build_type_resolver(aliases)
+
+    for struct in structs:
+        name = struct['name']
+        def constructor(self, struct_obj):
+            # TODO: Solve recursion problem with calling super constructor.
+            #       For now value is set manualy.
+            #super(self.__class__, self).__init__(struct_obj)
+            assert isinstance(struct_obj, dict)
+            self.value = struct_obj
+            self._type_resolver = final_type_resolver
+            self.bind()
+        type_class_attribs = dict()
+        type_class_attribs['__init__'] = constructor
+        type_class_attribs['struct_ast'] = struct
+        struct_classes[name] = type(name, (Struct,), type_class_attribs)
+    return struct_classes
+
+
+def build_type_classes(desc):
+    struct_classes = build_struct_classes(desc)
+
+    alias_classes = dict()
+    aliases = desc['alias'] if 'alias' in desc else []
+    final_type_resolver = build_type_resolver(aliases)
+
+    for alias in aliases:
+        alias_name = alias['name']
+        final_type = final_type_resolver(alias_name)
+        if utils.is_struct_type(final_type):
+            struct_name = utils.get_struct_name_by_type(final_type)
+            def constructor(self, struct_obj):
+                # TODO: Solve recursion problem with calling super constructor.
+                #       For now value is set manualy.
+                #super(self.__class__, self).__init__(struct_obj)
+                assert isinstance(struct_obj, dict)
+                self.value = struct_obj
+                self.type_str = alias_name
+                self._type_resolver = final_type_resolver
+                self.bind()
+            alias_class_atribs = dict()
+            alias_class_atribs['__init__'] = constructor
+            alias_classes[alias_name] = type(alias_name, (struct_classes[struct_name],), alias_class_atribs)
+        elif utils.is_array_type(final_type):
+            elem_type_name, _ = utils.factorize_array_type_str(final_type)
+            if elem_type_name in BASIC_SCRYPT_TYPES:
+                alias_classes[alias_name] = list()
+            elif utils.is_struct_type(elem_type_name):
+                struct_name = utils.get_struct_name_by_type(elem_type_name)
+                alias_classes[alias_name] = list()
+        else:
+            if final_type in BASIC_SCRYPT_TYPES:
+                def constructor(self, struct_obj):
+                    # TODO: Solve recursion problem with calling super constructor.
+                    #       For now value is set manualy.
+                    #super(self.__class__, self).__init__(struct_obj)
+                    assert isinstance(struct_obj, dict)
+                    self.value = struct_obj
+                    self.type_str = alias_name
+                    self._type_resolver = final_type_resolver
+                    self.bind()
+                alias_class_atribs = dict()
+                alias_class_atribs['__init__'] = constructor
+                alias_classes[alias_name] = type(alias_name, (BASIC_SCRYPT_TYPES[final_type],), alias_class_atribs)
+            else:
+                raise Exception('Could not resolve alias "{}" for type "{}".'.format(alias_name, alias['type']))
+
+    return {**alias_classes, **struct_classes}
+
+
+def build_type_resolver(aliases):
+    resolved_types = dict()
+    for alias in aliases:
+        final_type = utils.resolve_type(alias['name'], aliases)
+        resolved_types[alias['name']] = final_type
+
+    def resolver_func(alias):
+        if utils.is_struct_type(alias):
+            alias = utils.get_struct_name_by_type(alias)
+        array_type = ''
+        if utils.is_array_type(alias):
+            elem_type_name, sizes = utils.factorize_array_type_str(alias)
+            if utils.is_struct_type(elem_type_name):
+                alias = utils.get_struct_name_by_type(elem_type_name)
+            else:
+                alias = elem_type_name
+            array_type_buff = []
+            for size in sizes:
+                array_type_buff.append('[{}]'.format(size))
+            array_type = ''.join(array_type_buff)
+        if alias in BASIC_SCRYPT_TYPES:
+            return '{}{}'.format(alias, array_type)
+        if alias in resolved_types:
+            return '{}{}'.format(resolved_types[alias], array_type)
+        return 'struct {} {{}}{}'.format(alias, array_type)
+
+    return resolver_func
 

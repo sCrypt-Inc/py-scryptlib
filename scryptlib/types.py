@@ -4,31 +4,13 @@ import bitcoinx
 from bitcoinx import Script, base58_decode_check
 
 
-BASIC_TYPES = {
-        'bool',
-        'int',
-        'bytes'
-    }
-
-
-DOMAIN_SUBTYPES = {
-        'PubKey',
-        'Sig',
-        'Ripemd160',
-        'Sha1',
-        'Sha256',
-        'SigHashType',
-        'SigHashPreimage',
-        'OpCodeType'
-    }
-
-
 class ScryptType:
 
     type_str = None
 
     def __init__(self, value):
         self.value = value
+        self.type_resolver = None
 
     @property
     def asm(self):
@@ -37,6 +19,13 @@ class ScryptType:
     @property
     def json(self):
         return self.asm
+
+    @property
+    def final_type(self):
+        if self.type_resolver:
+            # TODO
+            pass
+        return self.type_str
 
 
 class Int(ScryptType):
@@ -225,10 +214,54 @@ class OpCodeType(ScryptType):
         return self.value.hex()
 
 
-# TODO
 class Struct(ScryptType):
+
+    struct_ast = None
 
     def __init__(self, value):
         assert isinstance(value, dict)
         super().__init__(value)
+
+    def bind(self):
+        '''
+        Order members so they match the order in the AST. Also set self.type_str based on the name in the AST.
+        (Since Python 3.7 dictionaries maintain insert ordering)
+        '''
+        utils.check_struct(self.struct_ast, self, self._type_resolver)
+        new_val = dict()
+        for param in self.struct_ast['params']:
+            name = param['name']
+            new_val[name] = self.value[name]
+        self.value = new_val
+        self.type_str = self.struct_ast['name']
+
+    def member_by_key(self, key):
+        member = self.value[key]
+        if isinstance(member, ScryptType) or isinstance(member, bytes):
+            return member
+        elif isinstance(member, bool):
+            return Bool(member)
+        elif isinstance(member, int):
+            return Int(member)
+        #return member
+        raise Exception('Unknown struct member type "{}" for member "{}".'.format(member.__class__, key))
+
+    def get_members(self):
+        return list(self.value.keys())
+
+
+BASIC_SCRYPT_TYPES = {
+        'bool': Bool,
+        'int': Int,
+        'bytes': Bytes,
+        'PubKey': PubKey,
+        'Sig': Sig,
+        'Ripemd160': Ripemd160,
+        'Sha1': Sha1,
+        'Sha256': Sha256,
+        'SigHashType': SigHashType,
+        'SigHashPreimage': SigHashPreimage,
+        'OpCodeType': OpCodeType
+    }
+
 

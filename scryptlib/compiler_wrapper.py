@@ -15,15 +15,15 @@ from . import utils
 CURRENT_CONTRACT_DESCRIPTION_VERSION = 3
 
 
-SYNTAX_ERR_REG = '(?P<filePath>[^\s]+):(?P<line>\d+):(?P<column>\d+):\n([^\n]+\n){3}' \
-        '(unexpected (?P<unexpected>[^\n]+)\nexpecting (?P<expecting>[^\n]+)|(?P<message>[^\n]+))'
-SEMANTIC_ERR_REG = 'Error:(\s|\n)*(?P<filePath>[^\s]+):(?P<line>\d+):(?P<column>\d+):' \
-        '(?P<line1>\d+):(?P<column1>\d+):*\n(?P<message>[^\n]+)\n'
-INTERNAL_ERR_REG = 'Internal error:(?P<message>.+)'
-WARNING_REG = 'Warning:(\s|\n)*(?P<filePath>[^\s]+):(?P<line>\d+):(?P<column>\d+):' \
-        '(?P<line1>\d+):(?P<column1>\d+):*\n(?P<message>[^\n]+)\n'
-SOURCE_REG = '^(?P<fileIndex>-?\d+):(?P<line>\d+):(?P<col>\d+):(?P<endLine>\d+):' \
-        '(?P<endCol>\d+)(#(?P<tagStr>.+))?'
+SYNTAX_ERR_REG = r'(?P<filePath>[^\s]+):(?P<line>\d+):(?P<column>\d+):\n([^\n]+\n){3}' \
+        r'(unexpected (?P<unexpected>[^\n]+)\nexpecting (?P<expecting>[^\n]+)|(?P<message>[^\n]+))'
+SEMANTIC_ERR_REG = r'Error:(\s|\n)*(?P<filePath>[^\s]+):(?P<line>\d+):(?P<column>\d+):' \
+        r'(?P<line1>\d+):(?P<column1>\d+):*\n(?P<message>[^\n]+)\n'
+INTERNAL_ERR_REG = r'Internal error:(?P<message>.+)'
+WARNING_REG = r'Warning:(\s|\n)*(?P<filePath>[^\s]+):(?P<line>\d+):(?P<column>\d+):' \
+        r'(?P<line1>\d+):(?P<column1>\d+):*\n(?P<message>[^\n]+)\n'
+SOURCE_REG = r'^(?P<fileIndex>-?\d+):(?P<line>\d+):(?P<col>\d+):(?P<endLine>\d+):' \
+        r'(?P<endCol>\d+)(#(?P<tagStr>.+))?'
 
 
 class DebugModeTag(Enum):
@@ -288,11 +288,11 @@ class CompilerWrapper:
                 debug_tag = None
                 tag_str = match.group('tagStr')
                 if tag_str:
-                    if re.search('\w+\.\w+:0', tag_str):
+                    if re.search(r'\w+\.\w+:0', tag_str):
                         debug_tag = DebugModeTag.FUNC_START
-                    if re.search('\w+\.\w+:1', tag_str):
+                    if re.search(r'\w+\.\w+:1', tag_str):
                         debug_tag = DebugModeTag.FUNC_END
-                    if re.search('loop:0', tag_str):
+                    if re.search(r'loop:0', tag_str):
                         debug_tag = DebugModeTag.LOOP_START
 
                 pos = None
@@ -502,8 +502,8 @@ class CompilerWrapper:
                 params.append({ 'name': p_name, 'type': p_type })
         elif properties:
             for prop in properties:
-                p_name = param['name'].replace('this.', '')
-                p_type = param['type']
+                p_name = prop['name'].replace('this.', '')
+                p_type = prop['type']
                 params.append({ 'name': p_name, 'type': p_type })
         return {'type': 'constructor', 'params': params}
 
@@ -578,8 +578,8 @@ class CompilerWrapper:
                 col1 = int(match.group('column1'))
                 position_range = [(line, col), (line1, col1)]
                 message = match.group('message')
-                message_sub_reg = 'Symbol `(?P<varName>\w+)` already defined at (?P<fileIndex>[^\s]+)' \
-                        ':(?P<line>\d+):(?P<column>\d+):(?P<line1>\d+):(?P<column1>\d+)'
+                message_sub_reg = r'Symbol `(?P<varName>\w+)` already defined at (?P<fileIndex>[^\s]+)' \
+                        r':(?P<line>\d+):(?P<column>\d+):(?P<line1>\d+):(?P<column1>\d+)'
                 message = re.sub(message_sub_reg, 'Symbol `$1` already defined at $3:$4:$5:$6', message)
                 message_full = match.string
 
@@ -603,8 +603,8 @@ class CompilerWrapper:
             col1 = int(match.group('column1'))
 
             message = match.group('message')
-            message_sub_reg = 'Variable `(?<varName>\w+)` shadows existing binding at ' \
-                    '(?<fileIndex>[^\s]+):(?<line>\d+):(?<column>\d+):(?<line1>\d+):(?<column1>\d+)'
+            message_sub_reg = r'Variable `(?<varName>\w+)` shadows existing binding at ' \
+                    r'(?<fileIndex>[^\s]+):(?<line>\d+):(?<column>\d+):(?<line1>\d+):(?<column1>\d+)'
             message = re.sub(message_sub_reg, 'Variable `$1` shadows existing binding at $3:$4:$5:$6', message)
 
             warnings.append((file_path, [(line, col), (line1,col1)], message))

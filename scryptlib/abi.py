@@ -9,9 +9,9 @@ from scryptlib.types import Struct, Int
 
 class ABICoder:
 
-    def __init__(self, abi, alias):
+    def __init__(self, abi, aliases):
         self.abi = abi
-        self.alias = alias
+        self.aliases = aliases
 
     def encode_constructor_call(self, contract, asm, *args):
         abi_constructor = self.abi_constructor()
@@ -25,7 +25,7 @@ class ABICoder:
         _args = []
         for idx, param in enumerate(c_params):
             arg = args[idx]
-            resolved_type = utils.resolve_type(param['type'], self.alias)
+            resolved_type = utils.resolve_type(param['type'], self.aliases)
             if utils.is_array_type(resolved_type):
                 elem_type, array_sizes = utils.factorize_array_type_str(resolved_type)
 
@@ -80,7 +80,7 @@ class ABICoder:
         return ' '.join(res)
 
     def encode_param(self, arg, param_entity):
-        resolved_type = utils.resolve_type(param_entity['type'], self.alias)
+        resolved_type = utils.resolve_type(param_entity['type'], self.aliases)
         if utils.is_array_type(resolved_type):
             if isinstance(arg, list):
                 return self.encode_param_array(arg, param_entity)
@@ -100,8 +100,8 @@ class ABICoder:
 
         scrypt_type = arg.type_str
         if resolved_type != scrypt_type:
-            raise Exception('Wrong argument type, expected "{}" or "{}", but got "{}".'.format(final_type,
-                                param_entity['type'], scrypt_type))
+            raise Exception('Wrong argument type, expected "{}", but got "{}".'.format(param_entity['type'], 
+                                scrypt_type))
 
         if isinstance(arg, bool):
             arg = Bool(arg)
@@ -117,9 +117,9 @@ class ABICoder:
         first_arg_type = type(args[0])
         for arg in args:
             if type(arg) != first_arg_type:
-                raise Exception('Array arguments are not of same type')
+                raise Exception('Array arguments are not of same type.')
 
-        resolved_type = utils.resolve_type(param_entity['type'], self.alias)
+        resolved_type = utils.resolve_type(param_entity['type'], self.aliases)
         elem_type, array_sizes = utils.factorize_array_type_str(resolve_type)
 
         if not utils.check_array(args, elem_type, array_sizes):
@@ -221,6 +221,13 @@ class FunctionCall:
         tx_input_context.utxo.script_pubkey = self.contract.locking_script
 
         return tx_input_context
+
+    @property
+    def script(self):
+        '''
+        The function calls scriptSig.
+        '''
+        return self.unlocking_script
 
 
 def escape_str_for_regex(string):

@@ -10,7 +10,7 @@ from bitcoinx import Script, Tx, TxInput, TxOutput, TxInputContext, SigHash, \
         int_to_le_bytes
 
 from scryptlib.compiler_wrapper import CompilerWrapper
-from scryptlib.types import ScryptType, Bool, Int, Struct, BASIC_TYPES, DOMAIN_SUBTYPES
+from scryptlib.types import ScryptType, Bool, Int, Struct, BASIC_SCRYPT_TYPES
 
 
 
@@ -125,16 +125,16 @@ def get_struct_name_by_type(type_name):
 def resolve_type(type_str, aliases):
     if is_array_type(type_str):
         elem_type_name, array_sizes = factorize_array_type_str(type_str)
-        return to_literal_array_type(elem_type_name, array_sizes)
+        return to_literal_array_type(resolve_type(elem_type_name, aliases), array_sizes)
 
     if is_struct_type(type_str):
-        resolve_type(get_struct_name_by_type(type_str), aliases)
+        return resolve_type(get_struct_name_by_type(type_str), aliases)
 
     for alias in aliases:
         if alias['name'] == type_str:
             return resolve_type(alias['type'], aliases)
 
-    if type_str in BASIC_TYPES.union(DOMAIN_SUBTYPES):
+    if type_str in BASIC_SCRYPT_TYPES:
         return type_str
     else:
         return 'struct {} {{}}'.format(type_str)
@@ -164,6 +164,18 @@ def factorize_array_type_str(type_str):
     return elem_type_name, array_sizes
 
 
+def type_of_arg(arg):
+    if isinstance(arg, ScryptType):
+        return arg.final_type
+    elif isinstance(arg, int):
+        return 'int'
+    elif isinstance(arg, bool):
+        return 'bool'
+    elif isinstance(arg, bytes):
+        return 'bytes'
+    raise Exception('Can\'t find matching sCrypt type for object of type "{}".'.format(arg.__class__))
+
+
 def check_array(obj_list, elem_type, array_sizes):
     if not isinstance(obj_list, list):
         return False
@@ -181,6 +193,33 @@ def check_array(obj_list, elem_type, array_sizes):
                 return False
 
     return True
+
+def check_struct(struct_ast, struct, type_resolver):
+    # TODO: check member types
+    for param in struct_ast['params']:
+        member = struct.member_by_key(param['name'])
+        final_type = type_of_arg(member)
+        param_final_type = type_resolver(param['type'])
+        if not final_type:
+            raise Exception('Argument of type struct "{}" is missing member "{}".'.format(struct_ast['name'], param['name']))
+        elif final_type != param_final_type:
+            if is_array_type(param_final_type):
+                elem_type, array_sizes = factorize_array_type_str(param_final_type)
+                if isinstance(struct.value[param['name']], list):
+                    if not check_array(struct.value[param['name']], elem_type, array_sizes):
+                        raise Exception('Array check failed. Struct "{}" property "{}" should be "{}".'.format(
+                                            struct_ast['name'], param['name'], param_final_type))
+                    raise Exception('Struct "{}" property "{}" should be "{}".'.format(
+                                        struct_ast['name'], param['name'], param_final_type))
+                raise Exception('Wrong argument type. Expected "{}", but got "{}".'.format(final_type, param_final_type))
+
+    members = []
+    for param in struct_ast['params']:
+        members.append(param['name'])
+
+    for member in struct.get_members():
+        if not member in members:
+            raise Exception('"{}" is not a member of struct "{}".'.format(member, struct_ast['name']))
 
 
 def flatten_array(obj_list, name, resolved_type):
@@ -307,7 +346,7 @@ def create_dummy_input_context():
     return TxInputContext(curr_tx, input_idx, prev_out, is_utxo_after_genesis=True)
 
 
-def get_preimage(tx, input_index, utxo_value, script_code, sighash):
+def get_preimage(tx, input_index, utxo_value, utxo_script, sighash):
     txin = tx.inputs[input_index]
     hash_prevouts = hash_sequence = hash_outputs = bitcoinx.consts.ZERO
 
@@ -325,7 +364,7 @@ def get_preimage(tx, input_index, utxo_value, script_code, sighash):
         pack_le_int32(tx.version),
         hash_prevouts,
         hash_sequence,
-        txin.to_bytes_for_signature(utxo_value, script_code),
+        txin.to_bytes_for_signature(utxo_value, utxo_script),
         hash_outputs,
         pack_le_uint32(tx.locktime),
         pack_le_uint32(sighash),
@@ -337,5 +376,5 @@ def get_preimage_from_input_context(context, sighash):
     tx = context.tx
     input_index = context.input_index
     utxo_value = context.utxo.value
-    script_code = context.utxo.script_pubkey
-    return get_preimage(tx, input_index, utxo_value, script_code, sighash)
+    utxo_script = context.utxo.script_pubkey
+    return get_preimage(tx, input_index, utxo_value, utxo_script, sighash)
