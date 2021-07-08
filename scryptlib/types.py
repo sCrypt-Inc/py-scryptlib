@@ -10,7 +10,7 @@ class ScryptType:
 
     def __init__(self, value):
         self.value = value
-        self.type_resolver = None
+        self._type_resolver = None
 
     @property
     def asm(self):
@@ -22,9 +22,8 @@ class ScryptType:
 
     @property
     def final_type(self):
-        if self.type_resolver:
-            # TODO
-            pass
+        if self._type_resolver:
+            return self._type_resolver(self.type_str)
         return self.type_str
 
 
@@ -65,6 +64,8 @@ class Bytes(ScryptType):
     type_str = 'bytes'
     
     def __init__(self, value):
+        if isinstance(value, str):
+            value = bytes.fromhex(value)
         assert isinstance(value, bytes)
         super().__init__(value)
 
@@ -109,6 +110,8 @@ class Sig(ScryptType):
 
     def __init__(self, value):
         # TODO: Check signature format, preferably using bitcoinX.
+        if isinstance(value, str):
+            value = bytes.fromhex(value)
         assert isinstance(value, bytes)
         super().__init__(value)
 
@@ -123,7 +126,10 @@ class Ripemd160(ScryptType):
 
     def __init__(self, value):
         if isinstance(value, str):
-            value = base58_decode_check(value)[1:]
+            if len(value) == 40:
+                value = bytes.fromhex(value)
+            else:
+                value = base58_decode_check(value)[1:]
 
         assert isinstance(value, bytes)
         assert len(value) == 20
@@ -225,7 +231,7 @@ class Struct(ScryptType):
     def bind(self):
         '''
         Order members so they match the order in the AST. Also set self.type_str based on the name in the AST.
-        (Since Python 3.7 dictionaries maintain insert ordering)
+        (Since Python 3.6 dictionaries maintain insert ordering)
         '''
         utils.check_struct(self.struct_ast, self, self._type_resolver)
         new_val = dict()
@@ -243,12 +249,40 @@ class Struct(ScryptType):
             return Bool(member)
         elif isinstance(member, int):
             return Int(member)
+        elif isinstance(member, list):
+            return member
         #return member
         raise Exception('Unknown struct member type "{}" for member "{}".'.format(member.__class__, key))
 
     def get_members(self):
         return list(self.value.keys())
 
+
+    def get_member_ast_final_type(self, key):
+        '''
+        Get the member type declared by the structure in the AST.
+        '''
+        param_entity = None
+        for p in self.struct_ast['params']:
+            if p['name'] == key:
+                param_entity = p
+
+        if not param_entity:
+            raise Exception('"{}" is not a member of struct {}.'.format(key, self.struct_ast['name']))
+
+        return self._type_resolver(param_entity['type']);
+
+    @property
+    def asm(self):
+        self.bind()
+
+        res_buff = []
+        flat_struct = utils.flatten_struct(self, '')
+        for elem in flat_struct:
+            res_buff.append(elem['value'].asm)
+
+        return ' '.join(res_buff)
+        
 
 BASIC_SCRYPT_TYPES = {
         'bool': Bool,

@@ -18,19 +18,20 @@ class ABICoder:
         c_params = self.__get_abi_params(abi_constructor)
 
         if len(args) != len(c_params):
-            raise Exception('Wrong number of arguments passed to constructor.\
-                    Expected {}, but got {}.'.format(len(c_params), len(args)))
+            raise Exception('Wrong number of arguments passed to constructor. ' \
+                    'Expected {}, but got {}.'.format(len(c_params), len(args)))
 
         _c_params = []
         _args = []
         for idx, param in enumerate(c_params):
             arg = args[idx]
+            arg = utils.primitives_to_scrypt_types(arg)
             resolved_type = utils.resolve_type(param['type'], self.aliases)
             if utils.is_array_type(resolved_type):
                 elem_type, array_sizes = utils.factorize_array_type_str(resolved_type)
 
-                if not (isinstance(arg, list) or utils.check_array(arg, elem_type, array_sizes)):
-                    raise Exception('Constructors parameter nr. {} should be of type "{}".'.format(idx, resolved_type))
+                if not utils.check_array(arg, elem_type, array_sizes):
+                    raise Exception('Constructors parameter with index {} should be of type "{}".'.format(idx, resolved_type))
 
                 flattened_arr = utils.flatten_array(arg, param['name'], resolved_type)
                 for obj in flattened_arr:
@@ -38,8 +39,8 @@ class ABICoder:
                     _args.append(obj['value'])
             elif utils.is_struct_type(resolved_type):
                 if arg.final_type != resolved_type:
-                    raise Exception('Constructors parameter nr. {} should be Struct object of type "{}".\
-                            Got struct of type "{}" instead.'.format(idx, param['type'], arg.type))
+                    raise Exception('Constructors parameter with index {} should be Struct object of type "{}". ' \
+                            'Got struct of type "{}" instead.'.format(idx, param['type'], arg.type_str))
 
                 flattened_struct = utils.flatten_struct(arg, param['name'])
                 for obj in flattened_struct:
@@ -52,7 +53,7 @@ class ABICoder:
         finalized_asm = asm
         for idx, param in enumerate(_c_params):
             if not '${}'.format(param['name']) in asm:
-                raise Exception('Missing "{}" contract constructor parameter in passed args.')
+                raise Exception('Missing "{}" contract constructor parameter in passed args.'.format(param['name']))
             param_regex = re.compile(escape_str_for_regex('${}'.format(param['name'])))
             finalized_asm = re.sub(param_regex, self.encode_param(_args[idx], param), finalized_asm)
         
@@ -63,8 +64,8 @@ class ABICoder:
         for entity in self.abi:
             if entity['name'] == name:
                 if len(entity['params']) != len(args):
-                    raise Exception('Wrong number of arguments passed to function call "{}",\
-                            expected {}, but got {}.'.format(len(entity['params']), len(args)))
+                    raise Exception('Wrong number of arguments passed to function call "{}", ' \
+                            'expected {}, but got {}.'.format(len(entity['params']), len(args)))
                 asm = self.encode_params(args, entity['params'])
                 if len(self.abi) > 2 and 'index' in entity:
                     pub_func_index = entity['index']
@@ -98,9 +99,9 @@ class ABICoder:
                 raise Exception('Expected parameter ""{}" as struct of type "{}", but got "{}".'.format(
                                         param_entity['name'], resolved_type, scrypt_type))
 
-        scrypt_type = arg.type_str
+        scrypt_type = utils.type_of_arg(arg)
         if resolved_type != scrypt_type:
-            raise Exception('Wrong argument type, expected "{}", but got "{}".'.format(param_entity['type'], 
+            raise Exception('Wrong argument type. Expected "{}", but got "{}".'.format(param_entity['type'], 
                                 scrypt_type))
 
         if isinstance(arg, bool):
@@ -120,7 +121,7 @@ class ABICoder:
                 raise Exception('Array arguments are not of same type.')
 
         resolved_type = utils.resolve_type(param_entity['type'], self.aliases)
-        elem_type, array_sizes = utils.factorize_array_type_str(resolve_type)
+        elem_type, array_sizes = utils.factorize_array_type_str(resolved_type)
 
         if not utils.check_array(args, elem_type, array_sizes):
             raise Exception('Array check failed for "{}".'.format(param_entity['type']))

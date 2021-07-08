@@ -1,3 +1,5 @@
+from functools import partialmethod
+
 import bitcoinx
 from bitcoinx import Script, OP_RETURN
 
@@ -92,12 +94,12 @@ def build_contract_class(desc):
         if entity_name in dir(ContractBase) or entity_name in contract_class_attribs:
             raise Exception('Method name "{}" conflicts with ContractClass member name.'.format(entity_name))
 
-        def func_call_handler(self, *args):
+        def func_call_handler(self, entity_name, *args):
             call = contract_class_attribs['abi_coder'].encode_pub_function_call(self, entity_name, *args)
             self.calls[entity_name] = call
             return call
 
-        contract_class_attribs[entity_name] = func_call_handler
+        contract_class_attribs[entity_name] = partialmethod(func_call_handler, entity_name)
 
     return type('Contract', (ContractBase,), contract_class_attribs)
 

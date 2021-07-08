@@ -147,9 +147,10 @@ class CompilerWrapper:
                  compiler_bin,
                  asm = True,
                  debug = True,
-                 optimize = False,
+                 optimize = True,
                  ast = False,
                  desc = False,
+                 stack = True,
                  st = datetime.now(),
                  timeout = 1200,
                  out_files = dict(),
@@ -159,6 +160,7 @@ class CompilerWrapper:
         self.compiler_bin = compiler_bin
         self.asm = asm
         self.debug = debug
+        self.stack = stack
         self.optimize = optimize
         self.ast = ast
         self.desc = desc
@@ -236,14 +238,20 @@ class CompilerWrapper:
 
     def __assemble_compiler_cmd(self, source, from_file):
         cmd_buff = [self.compiler_bin, 'compile']
+
+        major_release_ver = int(self.compiler_version.split('.')[0])
+        minor_release_ver = int(self.compiler_version.split('.')[1])
+
         if self.asm:
             cmd_buff.append('--asm')
         if self.ast or self.desc:
             cmd_buff.append('--ast')
         if self.debug:
             cmd_buff.append('--debug')
+        if self.stack and major_release_ver >= 1 and minor_release_ver >= 3:
+            cmd_buff.append('--stack')
         if self.optimize:
-            cmd_buff.append('--opt')
+            cmd_buff.append('--optimize')
         cmd_buff.append('-r')
         cmd_buff.append('-o')
         cmd_buff.append('{}'.format(str(self.out_dir.absolute())))
