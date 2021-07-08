@@ -147,7 +147,7 @@ class CompilerWrapper:
                  compiler_bin,
                  asm = True,
                  debug = True,
-                 optimize = True,
+                 optimize = False,
                  ast = False,
                  desc = False,
                  stack = True,
@@ -239,8 +239,10 @@ class CompilerWrapper:
     def __assemble_compiler_cmd(self, source, from_file):
         cmd_buff = [self.compiler_bin, 'compile']
 
+        # TODO: Check compiler versions in seperate function.
         major_release_ver = int(self.compiler_version.split('.')[0])
         minor_release_ver = int(self.compiler_version.split('.')[1])
+        patch_release_ver = int(self.compiler_version.split('.')[2][0])
 
         if self.asm:
             cmd_buff.append('--asm')
@@ -248,8 +250,11 @@ class CompilerWrapper:
             cmd_buff.append('--ast')
         if self.debug:
             cmd_buff.append('--debug')
-        if self.stack and major_release_ver >= 1 and minor_release_ver >= 3:
-            cmd_buff.append('--stack')
+        if self.stack:
+            if major_release_ver >= 1:
+                if minor_release_ver >= 1 or patch_release_ver >= 3:
+                    cmd_buff.append('--stack')
+                    
         if self.optimize:
             cmd_buff.append('--optimize')
         cmd_buff.append('-r')
