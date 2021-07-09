@@ -58,9 +58,9 @@ def find_compiler():
     if sys.platform.startswith('linux'):
         scryptc = find_compiler_linux()
     elif sys.platform == 'darwin':
-        pass
+        scryptc = find_compiler_darwin()
     elif sys.platform == 'win32' or sys.platform == 'cygwin':
-        pass
+        scryptc = find_compiler_windows()
 
     return scryptc
         
@@ -72,7 +72,7 @@ def find_compiler_linux():
     if res:
         return res
 
-    res = find_compiler_vscode_unix(path_suffix)
+    res = find_compiler_vscode(path_suffix)
     if res:
         return res
 
@@ -80,7 +80,11 @@ def find_compiler_linux():
 def find_compiler_darwin():
     path_suffix = 'compiler/scryptc/mac/scryptc'
 
-    res = find_compiler_vscode_unix(path_suffix)
+    res = find_compiler_local(path_suffix)
+    if res:
+        return res
+
+    res = find_compiler_vscode(path_suffix)
     if res:
         return res
 
@@ -88,24 +92,33 @@ def find_compiler_darwin():
 def find_compiler_windows():
     path_suffix = 'compiler/scryptc/win32/scryptc.exe'
 
+    res = find_compiler_local(path_suffix)
+    if res:
+        return res
 
-def find_compiler_vscode_unix(path_suffix):
-    env_home = os.environ['HOME']
+    res = find_compiler_vscode(path_suffix)
+    if res:
+        return res
+
+
+def find_compiler_vscode(path_suffix):
+    env_home = os.path.expanduser('~')
     if env_home:
         home_dir = Path(env_home)
-        vscode_path = home_dir / Path('.vscode-oss/extensions/')
-        if vscode_path.exists() and vscode_path.is_dir():
-            extension_res = None
-            for extension_dir in sorted(vscode_path.glob('bsv-scrypt.scrypt-*')):
-                # Ensure that filename is of correct format.
-                match = re.match(r'bsv-scrypt\.scrypt-[0-9]\.[0-9]\.[0-9]', extension_dir.name)
-                if match:
-                    extension_res = extension_dir
+        for vscode_folder in ['.vscode-oss', '.vscode']:
+            vscode_path = home_dir / Path('{}/extensions/'.format(vscode_folder))
+            if vscode_path.exists() and vscode_path.is_dir():
+                extension_res = None
+                for extension_dir in sorted(vscode_path.glob('bsv-scrypt.scrypt-*')):
+                    # Ensure that filename is of correct format.
+                    match = re.match(r'bsv-scrypt\.scrypt-[0-9]\.[0-9]\.[0-9]', extension_dir.name)
+                    if match:
+                        extension_res = extension_dir
 
-            if extension_res:
-                res = extension_dir / path_suffix
-                if res.exists():
-                    return res
+                if extension_res:
+                    res = extension_dir / path_suffix
+                    if res.exists():
+                        return res
 
 
 def find_compiler_local(path_suffix):
