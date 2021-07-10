@@ -11,8 +11,7 @@ from bitcoinx import Script, Tx, TxInput, TxOutput, TxInputContext, SigHash, \
         int_to_le_bytes
 
 from scryptlib.compiler_wrapper import CompilerWrapper
-from scryptlib.types import ScryptType, Bool, Int, Struct, BASIC_SCRYPT_TYPES
-
+import scryptlib.types
 
 
 def compile_contract(contract, out_dir=None, compiler_bin=None, from_string=False):
@@ -159,7 +158,7 @@ def resolve_type(type_str, aliases):
         if alias['name'] == type_str:
             return resolve_type(alias['type'], aliases)
 
-    if type_str in BASIC_SCRYPT_TYPES:
+    if type_str in scryptlib.types.BASIC_SCRYPT_TYPES:
         return type_str
     else:
         return 'struct {} {{}}'.format(type_str)
@@ -190,7 +189,7 @@ def factorize_array_type_str(type_str):
 
 
 def type_of_arg(arg):
-    if isinstance(arg, ScryptType):
+    if isinstance(arg, scryptlib.types.ScryptType):
         return arg.final_type
     elif isinstance(arg, bool):
         return 'bool'
@@ -234,10 +233,10 @@ def check_struct(struct_ast, struct, type_resolver):
                 elem_type, array_sizes = factorize_array_type_str(param_final_type)
                 if isinstance(struct.value[param['name']], list):
                     if not check_array(struct.value[param['name']], elem_type, array_sizes):
-                        raise Exception('Array check failed. Struct "{}" property "{}" should be "{}".'.format(
+                        raise Exception('Array check failed. scryptlib.types.Struct "{}" property "{}" should be "{}".'.format(
                                             struct_ast['name'], param['name'], param_final_type))
                 else:
-                    raise Exception('Struct "{}" property "{}" should be "{}".'.format(
+                    raise Exception('scryptlib.types.Struct "{}" property "{}" should be "{}".'.format(
                                         struct_ast['name'], param['name'], param_final_type))
             else:
                 raise Exception('Wrong argument type. Expected "{}", but got "{}".'.format(final_type, param_final_type))
@@ -269,15 +268,15 @@ def flatten_array(obj_list, name, resolved_type):
 
     res = []
     for idx, obj in enumerate(obj_list):
-        # TODO: Throw this checking out. All members should be of ScryptType. Use primitives_to_scrypt_types().
+        # TODO: Throw this checking out. All members should be of scryptlib.types.ScryptType. Use primitives_to_scrypt_types().
         if isinstance(obj, bool):
-            obj = Bool(obj)
+            obj = scryptlib.types.Bool(obj)
         elif isinstance(obj, int):
-            obj = Int(obj)
+            obj = scryptlib.types.Int(obj)
         elif isinstance(obj, list):
             res += flatten_array(obj, '{}[{}]'.format(name, idx), sub_array_type(resolved_type))
             continue
-        elif isinstance(obj, Struct):
+        elif isinstance(obj, scryptlib.types.Struct):
             res += flatten_struct(obj, '{}[{}]'.format(name, idx))
             continue
         res.append({
@@ -289,13 +288,13 @@ def flatten_array(obj_list, name, resolved_type):
 
 
 def flatten_struct(obj, name):
-    assert isinstance(obj, Struct)
+    assert isinstance(obj, scryptlib.types.Struct)
 
     keys = obj.get_members()
     res = []
     for key in keys:
         member = obj.member_by_key(key)
-        if isinstance(member, Struct):
+        if isinstance(member, scryptlib.types.Struct):
             res += flatten_struct(member, '{}.{}'.format(name, key))
         elif isinstance(member, list):
             resolved_type = obj.get_member_ast_final_type(key)
@@ -311,7 +310,7 @@ def flatten_struct(obj, name):
 
 def primitives_to_scrypt_types(obj):
     '''
-    Returns matching object of ScryptType. Raises Exception, if not possible.
+    Returns matching object of scryptlib.types.ScryptType. Raises Exception, if not possible.
     '''
     res = None
     if isinstance(obj, list):
@@ -319,10 +318,10 @@ def primitives_to_scrypt_types(obj):
         for item in obj:
             res.append(primitives_to_scrypt_types(item))
     elif isinstance(obj, bool):
-        res = Bool(obj)
+        res = scryptlib.types.Bool(obj)
     elif isinstance(obj, int):
-        res = Int(obj)
-    elif isinstance(obj, ScryptType):
+        res = scryptlib.types.Int(obj)
+    elif isinstance(obj, scryptlib.types.ScryptType):
         res = obj
 
     if not res:

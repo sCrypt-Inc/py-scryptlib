@@ -25,6 +25,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
 setup(long_description=long_description,
+      long_description_content_type="text/markdown",
       name='scryptlib',
       version=get_version('scryptlib/__init__.py'),
       description='Python SDK for integration of sCrypt Bitcoin SV smart contracts.',

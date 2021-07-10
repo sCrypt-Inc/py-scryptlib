@@ -1,7 +1,7 @@
-import scryptlib.utils as utils
-
 import bitcoinx
 from bitcoinx import Script, base58_decode_check
+
+import scryptlib.utils
 
 
 class ScryptType:
@@ -194,12 +194,12 @@ class SigHashPreimage(ScryptType):
 
     @classmethod
     def from_tx(cls, tx, input_index, utxo_value, script_code, sighash):
-        preimage_bytes = scryptlib.utils.get_preimage(tx, input_index, script_code, sighash)
+        preimage_bytes = scryptlib.scryptlib.utils.get_preimage(tx, input_index, script_code, sighash)
         return cls(preimage_bytes)
 
     @classmethod
     def from_input_context(cls, context, sighash):
-        preimage_bytes = scryptlib.utils.get_preimage_from_input_context(context, sighash)
+        preimage_bytes = scryptlib.scryptlib.utils.get_preimage_from_input_context(context, sighash)
         return cls(preimage_bytes)
 
     @property
@@ -233,7 +233,7 @@ class Struct(ScryptType):
         Order members so they match the order in the AST. Also set self.type_str based on the name in the AST.
         (Since Python 3.6 dictionaries maintain insert ordering)
         '''
-        utils.check_struct(self.struct_ast, self, self._type_resolver)
+        scryptlib.utils.check_struct(self.struct_ast, self, self._type_resolver)
         new_val = dict()
         for param in self.struct_ast['params']:
             name = param['name']
@@ -277,7 +277,7 @@ class Struct(ScryptType):
         self.bind()
 
         res_buff = []
-        flat_struct = utils.flatten_struct(self, '')
+        flat_struct = scryptlib.utils.flatten_struct(self, '')
         for elem in flat_struct:
             res_buff.append(elem['value'].asm)
 
