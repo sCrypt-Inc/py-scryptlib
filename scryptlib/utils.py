@@ -14,7 +14,7 @@ from scryptlib.compiler_wrapper import CompilerWrapper
 import scryptlib.types
 
 
-def compile_contract(contract, out_dir=None, compiler_bin=None, from_string=False):
+def compile_contract(contract, out_dir=None, compiler_bin=None, from_string=False, debug=True):
     '''
     Compile sCrypt contract from a file or a string object. Returns instance of class
     CompilerResult if the compilation was successfull.
@@ -39,7 +39,7 @@ def compile_contract(contract, out_dir=None, compiler_bin=None, from_string=Fals
 
     compiler_wrapper = CompilerWrapper(
             desc=True,
-            debug=True,
+            debug=debug,
             stack=True,
             out_dir=out_dir,
             compiler_bin=compiler_bin
@@ -139,8 +139,12 @@ def to_literal_array_type(type_name, sizes):
 
 
 def get_struct_name_by_type(type_name):
+    '''
+    Returns struct name from type string e.g.: 'struct ST1 {}[2][2][2]' -> 'ST1'.
+    '''
+    # TODO: Throw exception for malformed type string?
     type_name = type_name.strip()
-    match = re.match(r'^struct\s(\w+)\s\{\}$', type_name)
+    match = re.match(r'^struct\s(\w+)\s\{\}.*$', type_name)
     if match:
         return match.group(1)
     return ''
@@ -378,6 +382,7 @@ def get_push_int(value):
         item += pack_byte(0x80 if value < 0 else 0x00)
     elif value < 0:
         item = item[:-1] + pack_byte(item[-1] | 0x80)
+
     return get_push_item(item)
         
 

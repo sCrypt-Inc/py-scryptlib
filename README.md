@@ -27,7 +27,7 @@ The SDK is used to convert script templates, produced by the sCrypt compiler, to
 
 ### Compiling an sCrypt contract
 
-You can compile an sCrypt conract source file like so:
+We can compile an sCrypt conract source file like so:
 
 ```python
 import scryptlib.utils
@@ -97,7 +97,7 @@ assert verify_result == True
 From the example see, that we called the contracts public function, named `equals`. The actual call to `equals()` in Python reutrns an instance of `scryptlib.abi.FunctionCall`. That object in turn has a method, named `verify`, with which we can run the function calls unlocking script against the contracts locking script.
 `verify` can internaly create an input evaluation context for simple contracts, but once we start using more advanced constructs, like signatures, we can pass an instance of `bitconx.TxInputContext`, using the `tx_input_context` parameter.
 
-sctyptlib-python leverages the [bitcoinx](https://github.com/kyuupichan/bitcoinX) to deal with Bitcoin primitives.
+sctyptlib-python leverages the [bitcoinx](https://github.com/kyuupichan/bitcoinX) library to deal with Bitcoin primitives.
 
 The following is an example of a local evaluation of a P2PKH contract:
 

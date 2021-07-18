@@ -522,18 +522,20 @@ class CompilerWrapper:
 
     @staticmethod
     def resolve_abi_param_type(contract_name, type_str, aliases, static_int_consts):
-        resolved_type = type_str
         if utils.is_array_type(type_str):
             resolved_type = CompilerWrapper.resolve_array_type_w_const_int(contract_name, 
-                    resolved_type, static_int_consts)
-        resolved_type = utils.resolve_type(type_str, aliases)
+                    type_str, static_int_consts)
+        else:
+            resolved_type = utils.resolve_type(type_str, aliases)
 
         if utils.is_struct_type(resolved_type):
             return utils.get_struct_name_by_type(resolved_type)
         elif utils.is_array_type(resolved_type):
-            elem_type_name, array_sizes = utils.factorize_array_type_str(type_str)
+            elem_type_name, array_sizes = utils.factorize_array_type_str(resolved_type)
+
             if utils.is_struct_type(elem_type_name):
-                elem_type_name = utils.get_struct_name_by_type(type_str)
+                elem_type_name = utils.get_struct_name_by_type(resolved_type)
+
             return utils.to_literal_array_type(elem_type_name, array_sizes)
 
         return resolved_type
