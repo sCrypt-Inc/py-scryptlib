@@ -7,18 +7,19 @@ import scryptlib.utils as utils
 from scryptlib.compiler_wrapper import CompilerResult
 from scryptlib.abi import ABICoder
 from scryptlib.types import BASIC_SCRYPT_TYPES, Struct
+from scryptlib.serializer import serialize_state
 
 
 class ContractBase:
 
-    def __init__(self):
-        self.calls = dict()
-        self.asm_args = None
-        self._data_part = None
+    #def __init__(self):
+    #    self.calls = dict()
+    #    self.asm_vars = None
+    #    self._data_part = None
 
-    def replace_asm_vars(self, asm_var_values):
-        self.asm_args = asm_var_values
-        self.scripted_constructor.initialize(asm_var_values)
+    #def replace_asm_vars(self, asm_var_values):
+    #    self.asm_vars = asm_var_values
+    #    self.scripted_constructor.initialize(asm_vars)
 
     #def run_verify(self, tx_input_context, interpreter_limits):
     #    # Set output script to verify sciptSig against.
@@ -30,6 +31,8 @@ class ContractBase:
             self._data_part = state
         elif isinstance(state, str):
             self._data_part = bytes.fromhex(state)
+        elif isinstance(state, dict):
+            self._data_part = serialize_state(state)
         else:
             raise NotImplementedError('Invalid object type for contract data part "{}".'.format(state.__class__))
 
@@ -45,6 +48,12 @@ class ContractBase:
     def code_part(self):
         return self.scripted_constructor.locking_script << OP_RETURN
 
+    @property
+    def data_part(self):
+        if self._data_part:
+            return Script(self._data_part)
+        return None
+
     @staticmethod
     def find_src_info():
         pass
@@ -58,10 +67,11 @@ def build_contract_class(desc):
     if isinstance(desc, CompilerResult):
         desc = desc.to_desc()
 
-    def constructor(self, *args):
+    def constructor(self, *args, **kwargs):
         self.calls = dict()
-        self.asm_args = None
         self._data_part = None
+        self.asm_vars = kwargs.get('asm_vars')
+
         self.scripted_constructor = self.abi_coder.encode_constructor_call(self, self.asm, *args)
 
     @classmethod

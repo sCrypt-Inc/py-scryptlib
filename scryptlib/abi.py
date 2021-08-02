@@ -4,7 +4,7 @@ from bitcoinx import TxInputContext, InterpreterLimits, MinerPolicy, Script
 
 import scryptlib.utils as utils
 from scryptlib.compiler_wrapper import ABIEntityType
-from scryptlib.types import Struct, Int
+from scryptlib.types import Struct, Int, Bool
 
 
 class ABICoder:
@@ -56,6 +56,13 @@ class ABICoder:
                 raise Exception('Missing "{}" contract constructor parameter in passed args.'.format(param['name']))
             param_regex = re.compile(escape_str_for_regex('${}'.format(param['name'])))
             finalized_asm = re.sub(param_regex, self.encode_param(_args[idx], param), finalized_asm)
+
+        # Replace ASM variable placeholders in locking script with the actual arguments.
+        if contract.asm_vars:
+            for key, val in contract.asm_vars.items():
+                param_regex = re.compile(escape_str_for_regex('${}'.format(key)))
+                finalized_asm = re.sub(param_regex, val, finalized_asm)
+
         
         locking_script = utils.asm_to_script(finalized_asm) # TODO: Remove once sCrypt supports hex output.
         return FunctionCall('constructor', args, contract, locking_script=locking_script)
@@ -65,7 +72,7 @@ class ABICoder:
             if entity['name'] == name:
                 if len(entity['params']) != len(args):
                     raise Exception('Wrong number of arguments passed to function call "{}", ' \
-                            'expected {}, but got {}.'.format(len(entity['params']), len(args)))
+                            'expected {}, but got {}.'.format(name, len(entity['params']), len(args)))
                 asm = self.encode_params(args, entity['params'])
                 if len(self.abi) > 2 and 'index' in entity:
                     pub_func_index = entity['index']
@@ -96,7 +103,7 @@ class ABICoder:
                                         param_entity['name'], resolved_type, arg.final_type))
             else:
                 scrypt_type = arg.type_str
-                raise Exception('Expected parameter ""{}" as struct of type "{}", but got "{}".'.format(
+                raise Exception('Expected parameter "{}" as struct of type "{}", but got "{}".'.format(
                                         param_entity['name'], resolved_type, scrypt_type))
 
         scrypt_type = utils.type_of_arg(arg)

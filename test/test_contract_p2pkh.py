@@ -42,5 +42,5 @@ def test_verify_correct():
     sig = wrong_key_priv.sign(sighash, hasher=None)
     sig = sig + pack_byte(sighash_flag)
     with pytest.raises(bitcoinx.VerifyFailed):
-        verify_result = p2pkh_obj.unlock(Sig(sig), PubKey(wrong_key_pub)).verify(context)
+       p2pkh_obj.unlock(Sig(sig), PubKey(wrong_key_pub)).verify(context)
 

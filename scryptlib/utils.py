@@ -398,34 +398,37 @@ def create_dummy_input_context():
     tx_version = 2
     tx_locktime = 0x00000000
 
-    out_satoshis = 0
+    utxo_satoshis = 0
     script_pubkey = Script()
-    prev_out = TxOutput(out_satoshis, script_pubkey)
-    prev_tx = Tx(tx_version, [], [prev_out], tx_locktime)
+    utxo = TxOutput(utxo_satoshis, script_pubkey)
+    prev_tx = Tx(tx_version, [], [utxo], tx_locktime)
     prev_txid = prev_tx.hash()
 
-    prev_out_idx = 0
+    utxo_idx = 0
     script_sig = Script()
     n_sequence = 0xffffffff
-    curr_in = TxInput(prev_txid, prev_out_idx, script_sig, n_sequence)
+    curr_in = TxInput(prev_txid, utxo_idx, script_sig, n_sequence)
     curr_tx = Tx(tx_version, [curr_in], [], tx_locktime)
 
     input_idx = 0
-    return TxInputContext(curr_tx, input_idx, prev_out, is_utxo_after_genesis=True)
+    return TxInputContext(curr_tx, input_idx, utxo, is_utxo_after_genesis=True)
 
 
-def get_preimage(tx, input_index, utxo_value, utxo_script, sighash):
+def get_preimage(tx, input_index, utxo_value, utxo_script, sighash_flag=None):
+    if not sighash_flag:
+        sighash_flag = SigHash(SigHash.ALL | SigHash.FORKID)
+
     txin = tx.inputs[input_index]
     hash_prevouts = hash_sequence = hash_outputs = bitcoinx.consts.ZERO
 
-    sighash_not_single_none = sighash.base not in (SigHash.SINGLE, SigHash.NONE)
-    if not sighash.anyone_can_pay:
+    sighash_not_single_none = sighash_flag.base not in (SigHash.SINGLE, SigHash.NONE)
+    if not sighash_flag.anyone_can_pay:
         hash_prevouts = tx._hash_prevouts()
         if sighash_not_single_none:
             hash_sequence = tx._hash_sequence()
     if sighash_not_single_none:
         hash_outputs = tx._hash_outputs()
-    elif (sighash.base == SigHash.SINGLE and input_index < len(tx.outputs)):
+    elif (sighash_flag.base == SigHash.SINGLE and input_index < len(tx.outputs)):
         hash_outputs = double_sha256(tx.outputs[input_index].to_bytes())
 
     preimage = b''.join((
@@ -435,14 +438,17 @@ def get_preimage(tx, input_index, utxo_value, utxo_script, sighash):
         txin.to_bytes_for_signature(utxo_value, utxo_script),
         hash_outputs,
         pack_le_uint32(tx.locktime),
-        pack_le_uint32(sighash),
+        pack_le_uint32(sighash_flag),
     ))
     return preimage
 
 
-def get_preimage_from_input_context(context, sighash):
+def get_preimage_from_input_context(context, sighash_flag=None):
+    if not sighash_flag:
+        sighash_flag = SigHash(SigHash.ALL | SigHash.FORKID)
+
     tx = context.tx
     input_index = context.input_index
     utxo_value = context.utxo.value
     utxo_script = context.utxo.script_pubkey
-    return get_preimage(tx, input_index, utxo_value, utxo_script, sighash)
+    return get_preimage(tx, input_index, utxo_value, utxo_script, sighash_flag)

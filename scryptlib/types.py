@@ -146,6 +146,10 @@ class Sha1(ScryptType):
     type_str = 'Sha1'
 
     def __init__(self, value):
+        if isinstance(value, str):
+            assert len(value) == 40
+            value = bytes.fromhex(value)
+
         assert isinstance(value, bytes)
         assert len(value) == 20
         super().__init__(value)
@@ -160,6 +164,10 @@ class Sha256(ScryptType):
     type_str = 'Sha256'
 
     def __init__(self, value):
+        if isinstance(value, str):
+            assert len(value) == 64
+            value = bytes.fromhex(value)
+
         assert isinstance(value, bytes)
         assert len(value) == 32
         super().__init__(value)
