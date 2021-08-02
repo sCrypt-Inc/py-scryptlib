@@ -204,7 +204,7 @@ class FunctionCall:
                 # A loose policy
                 MinerPolicy(10_000_000, 256, 10_000_000, 32_000, 256)
             ]
-            interpreter_limits = InterpreterLimits(policies[1], is_genesis_enabled=True, is_consensus=True)
+            interpreter_limits = InterpreterLimits(policies[1], is_genesis_enabled=True, is_consensus=True, base_flags='consensus')
 
         # Make a deep copy of the passed TxInputContext object, because it may be modified from here on.
         tx_input_context = copy.deepcopy(tx_input_context)
