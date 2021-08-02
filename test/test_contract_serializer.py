@@ -1,5 +1,6 @@
 import pytest
 import random
+import os
 
 import scryptlib.utils
 import scryptlib.contract
@@ -81,7 +82,8 @@ def test_verify_main():
         for j in range(0, 10):
             n = random.randint(0, 2**32)
             m = random.randint(bound, bounds[i+1])
-            h = random.randbytes(m)
+            #h = random.randbytes(m)
+            h = os.urandom(m)
 
             verify_result = demo.main(n % 2 == 0, Bytes(h), n).verify()
             assert verify_result == True
