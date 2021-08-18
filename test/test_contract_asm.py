@@ -2,7 +2,7 @@ import pytest
 
 import scryptlib.utils
 import scryptlib.contract
-from scryptlib.types import Sig, PubKey, Bytes
+from scryptlib.types import Sig, PubKey, Bytes, Int, Ripemd160
 
 import bitcoinx
 from bitcoinx import SigHash, PrivateKey, pack_byte
@@ -19,8 +19,8 @@ desc = compiler_result.to_desc()
 
 Asm = scryptlib.contract.build_contract_class(desc)
 asm_vars = {
-    'Asm.p2pkh.pkh': pubkey_hash.hex(),
-    'Asm.equalImpl.x': 'OP_11'
+    'Asm.p2pkh.pkh': Ripemd160(pubkey_hash),
+    'Asm.equalImpl.x': Int(11)
 }
 asm = Asm(asm_vars=asm_vars)
 

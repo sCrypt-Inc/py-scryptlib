@@ -1,6 +1,6 @@
 import copy
 import re
-from bitcoinx import TxInputContext, InterpreterLimits, MinerPolicy, Script
+from bitcoinx import TxInputContext, InterpreterLimits, MinerPolicy, Script, pack_byte
 
 import scryptlib.utils as utils
 from scryptlib.compiler_wrapper import ABIEntityType
@@ -13,7 +13,7 @@ class ABICoder:
         self.abi = abi
         self.aliases = aliases
 
-    def encode_constructor_call(self, contract, asm, *args):
+    def encode_constructor_call(self, contract, hex_script, *args):
         abi_constructor = self.abi_constructor()
         c_params = self.__get_abi_params(abi_constructor)
 
@@ -50,21 +50,21 @@ class ABICoder:
                 _c_params.append(param)
                 _args.append(arg)
 
-        finalized_asm = asm
+        finalized_hex_script = hex_script
         for idx, param in enumerate(_c_params):
-            if not '${}'.format(param['name']) in asm:
+            if not '<{}>'.format(param['name']) in hex_script:
                 raise Exception('Missing "{}" contract constructor parameter in passed args.'.format(param['name']))
-            param_regex = re.compile(escape_str_for_regex('${}'.format(param['name'])))
-            finalized_asm = re.sub(param_regex, self.encode_param(_args[idx], param), finalized_asm)
+            param_regex = re.compile(escape_str_for_regex('<{}>'.format(param['name'])))
+            finalized_hex_script = re.sub(param_regex, self.encode_param(_args[idx], param), finalized_hex_script)
 
-        # Replace ASM variable placeholders in locking script with the actual arguments.
-        if contract.asm_vars:
-            for key, val in contract.asm_vars.items():
-                param_regex = re.compile(escape_str_for_regex('${}'.format(key)))
-                finalized_asm = re.sub(param_regex, val, finalized_asm)
+        # Replace inline assembly variable placeholders in locking script with the actual arguments.
+        # TODO: Check if each value if instance of ScryptType
+        if contract.inline_asm_vars:
+            for key, val in contract.inline_asm_vars.items():
+                param_regex = re.compile(escape_str_for_regex('<{}>'.format(key)))
+                finalized_hex_script = re.sub(param_regex, val.hex, finalized_hex_script)
 
-        
-        locking_script = utils.asm_to_script(finalized_asm) # TODO: Remove once sCrypt supports hex output.
+        locking_script = Script.from_hex(finalized_hex_script)
         return FunctionCall('constructor', args, contract, locking_script=locking_script)
 
     def encode_pub_function_call(self, contract, name, *args):
@@ -73,12 +73,11 @@ class ABICoder:
                 if len(entity['params']) != len(args):
                     raise Exception('Wrong number of arguments passed to function call "{}", ' \
                             'expected {}, but got {}.'.format(name, len(entity['params']), len(args)))
-                asm = self.encode_params(args, entity['params'])
+                hex_script = self.encode_params(args, entity['params'])
                 if len(self.abi) > 2 and 'index' in entity:
                     pub_func_index = entity['index']
-                    asm += ' {}'.format(Int(pub_func_index).asm)
-
-                unlocking_script = utils.asm_to_script(asm)   # TODO: Remove once sCrypt supports hex output.
+                    hex_script += '{}'.format(Int(pub_func_index).hex) # TODO
+                unlocking_script = Script.from_hex(hex_script) 
                 return FunctionCall(name, args, contract, unlocking_script=unlocking_script)
 
     def encode_params(self, args, param_entities):
@@ -116,7 +115,7 @@ class ABICoder:
         elif isinstance(arg, int):
             arg = Int(arg)
 
-        return arg.asm
+        return arg.hex
 
     def encode_param_array(self, args, param_entity):
         if len(args) == 0:
@@ -155,7 +154,7 @@ class FunctionCall:
 
     def __init__(self, method_name, params, contract, locking_script=None, unlocking_script=None):
         if not (locking_script or unlocking_script):
-            raise Exception('Binding locking_script_asm and unlocking_script_asm can\'t both be empty.')
+            raise Exception('Binding locking_script and unlocking_script can\'t both be empty.')
 
         self.contract = contract
         self.locking_script = locking_script
@@ -172,12 +171,6 @@ class FunctionCall:
                         'type': param['type'],
                         'value': params[idx]
                         })
-
-    def to_asm(self):
-        if self.unlocking_script:
-            return self.unlocking_script.to_asm(decode_sighash=True)
-        if self.locking_script:
-            return self.locking_script.to_asm(decode_sighash=True)
 
     def verify(self, tx_input_context=utils.create_dummy_input_context(), interpreter_limits=None,
             use_contract_script_pair=True):

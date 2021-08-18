@@ -38,7 +38,6 @@ def compile_contract(contract, out_dir=None, compiler_bin=None, from_string=Fals
         raise Exception('File "{}" is not a directory.'.format(str(out_dir)))
 
     compiler_wrapper = CompilerWrapper(
-            desc=True,
             debug=debug,
             stack=True,
             out_dir=out_dir,
@@ -332,29 +331,6 @@ def primitives_to_scrypt_types(obj):
         raise Exception('Could not find matching sCrypt type for object of type "{}".'.format(obj.__class__.__name__))
 
     return res
-
-
-def asm_to_script(asm):
-    '''
-    Creates instance of bitcoinx.Script, based on the ASM string, passed as a parameter.
-    This function is implemented because the ASM, that is being produced by the sCrypt compiler, has all data strings encoded in
-    hex form and bitcoinx.Script.from_asm() method doesn't support that format. This is due to the ambiguity of ASM encoding.
-    '''
-    res_buff = []
-    for word in asm.split():
-        if word.startswith('OP_'):
-           try:
-               opcode = Ops[word]
-           except KeyError:
-               raise ScriptError(f'unrecognized op code {word}') from None
-           res_buff.append(pack_byte(opcode))
-           continue
-        try:
-            item = bytes.fromhex(word)
-            res_buff.append(get_push_item(item))
-        except ValueError:
-            raise ScriptError(f'invalid pushdata {word}') from None
-    return Script(b''.join(res_buff))
 
 
 def get_push_item(item_bytes):

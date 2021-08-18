@@ -4,6 +4,9 @@ from bitcoinx import Script, base58_decode_check
 import scryptlib.utils
 
 
+# TODO: Throw out asm properties?
+
+
 class ScryptType:
 
     type_str = None
@@ -14,6 +17,10 @@ class ScryptType:
 
     @property
     def asm(self):
+        return None
+    
+    @property
+    def hex(self):
         return None
 
     @property
@@ -43,6 +50,11 @@ class Int(ScryptType):
             return 'OP_{}'.format(self.value)
         return bitcoinx.push_int(self.value)[1:].hex()
 
+    @property
+    def hex(self):
+        return bitcoinx.push_int(self.value).hex()
+
+
 
 class Bool(ScryptType):
 
@@ -58,6 +70,10 @@ class Bool(ScryptType):
             return 'OP_TRUE'
         return 'OP_FALSE'
 
+    @property
+    def hex(self):
+        return Script.from_asm(self.asm).to_hex()
+
 
 class Bytes(ScryptType):
 
@@ -71,7 +87,11 @@ class Bytes(ScryptType):
 
     @property
     def asm(self):
-        return self.value.hex()
+        return self.hex
+
+    @property
+    def hex(self):
+        return (Script() << self.value).to_hex()
 
 
 class PrivKey(ScryptType):
@@ -86,7 +106,11 @@ class PrivKey(ScryptType):
 
     @property
     def asm(self):
-        return self.value.to_hex()
+        return self.hex
+
+    @property
+    def hex(self):
+        return (Script() << self.value.to_bytes()).to_hex()
 
 
 class PubKey(ScryptType):
@@ -101,7 +125,11 @@ class PubKey(ScryptType):
 
     @property
     def asm(self):
-        return self.value.to_hex()
+        return self.hex
+
+    @property
+    def hex(self):
+        return (Script() << self.value.to_bytes()).to_hex()
 
 
 class Sig(ScryptType):
@@ -117,7 +145,12 @@ class Sig(ScryptType):
 
     @property
     def asm(self):
-        return self.value.hex()
+        return self.hex
+
+    @property
+    def hex(self):
+        return (Script() << self.value).to_hex()
+
 
 
 class Ripemd160(ScryptType):
@@ -138,7 +171,11 @@ class Ripemd160(ScryptType):
 
     @property
     def asm(self):
-        return self.value.hex()
+        return self.hex
+
+    @property
+    def hex(self):
+        return (Script() << self.value).to_hex()
 
 
 class Sha1(ScryptType):
@@ -156,7 +193,12 @@ class Sha1(ScryptType):
 
     @property
     def asm(self):
-        return self.value.hex()
+        return self.hex
+
+    @property
+    def hex(self):
+        return (Script() << self.value).to_hex()
+
 
 
 class Sha256(ScryptType):
@@ -174,7 +216,12 @@ class Sha256(ScryptType):
 
     @property
     def asm(self):
-        return self.value.hex()
+        return self.hex
+
+    @property
+    def hex(self):
+        return (Script() << self.value).to_hex()
+
 
 
 class SigHashType(ScryptType):
@@ -190,6 +237,10 @@ class SigHashType(ScryptType):
     @property
     def asm(self):
         return self.value.to_string()
+
+    @property
+    def hex(self):
+        return '{0:x}'.format(self.value)
 
 
 class SigHashPreimage(ScryptType):
@@ -212,7 +263,11 @@ class SigHashPreimage(ScryptType):
 
     @property
     def asm(self):
-        return self.value.hex()
+        return self.hex
+
+    @property
+    def hex(self):
+        return (Script() << self.value).to_hex()
 
 
 class OpCodeType(ScryptType):
@@ -225,6 +280,10 @@ class OpCodeType(ScryptType):
 
     @property
     def asm(self):
+        return self.hex
+
+    @property
+    def hex(self):
         return self.value.hex()
 
 
@@ -290,6 +349,18 @@ class Struct(ScryptType):
             res_buff.append(elem['value'].asm)
 
         return ' '.join(res_buff)
+
+    @property
+    def hex(self):
+        self.bind()
+
+        res_buff = []
+        flat_struct = scryptlib.utils.flatten_struct(self, '')
+        for elem in flat_struct:
+            res_buff.append(elem['value'].hex)
+
+        #return ''.join(res_buff)
+        return Script.from_hex(''.join(res_buff)).to_hex()
         
 
 BASIC_SCRYPT_TYPES = {

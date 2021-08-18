@@ -120,6 +120,7 @@ class CompilerResult:
                 'abi': self.abi,
                 'file': '',
                 'asm': CompilerWrapper.get_asm_as_string(self.asm),
+                'hex': CompilerWrapper.get_hex_script(self.asm),
                 'sources': [],
                 'sourceMap': [],
                 'md5': self.source_md5
@@ -145,11 +146,8 @@ class CompilerWrapper:
     def __init__(self, 
                  out_dir,
                  compiler_bin,
-                 asm = True,
                  debug = True,
                  optimize = False,
-                 ast = False,
-                 desc = False,
                  stack = True,
                  st = datetime.now(),
                  timeout = 1200,
@@ -158,12 +156,13 @@ class CompilerWrapper:
                  cwd = Path('.')):
         self.out_dir = Path(out_dir)
         self.compiler_bin = compiler_bin
-        self.asm = asm
+        self.asm = True
+        self.hex_out = True
         self.debug = debug
         self.stack = stack
         self.optimize = optimize
-        self.ast = ast
-        self.desc = desc
+        self.ast = True
+        self.desc = True
         self.st = st
         self.timeout = timeout
         self.out_files = out_files
@@ -228,10 +227,10 @@ class CompilerWrapper:
             out_file_desc = self.out_dir / '{}_desc.json'.format(source_prefix)
             out_files['desc'] = out_file_desc
 
-            desc = compiler_res.to_desc(source_map=self.debug)
+            desc_res = compiler_res.to_desc(source_map=self.debug)
 
             with open(out_file_desc, 'w', encoding='utf-8') as f:
-                json.dump(desc, f, indent=4)
+                json.dump(desc_res, f, indent=4)
 
         # TODO: Clean up out files.
         return CompilerResult(**compiler_result_params)
@@ -239,13 +238,12 @@ class CompilerWrapper:
     def __assemble_compiler_cmd(self, source, from_file):
         cmd_buff = [self.compiler_bin, 'compile']
 
-        # TODO: Check compiler versions in seperate function.
-        major_release_ver = int(self.compiler_version.split('.')[0])
-        minor_release_ver = int(self.compiler_version.split('.')[1])
-        patch_release_ver = int(self.compiler_version.split('.')[2][0])
+        major_release_ver, minor_release_ver, patch_release_ver = self.__get_compiler_semantic_version_parts()
 
         if self.asm:
             cmd_buff.append('--asm')
+        if self.hex_out:
+            cmd_buff.append('--hex')
         if self.ast or self.desc:
             cmd_buff.append('--ast')
         if self.debug:
@@ -265,6 +263,14 @@ class CompilerWrapper:
         if from_file:
             cmd_buff.append(str(source))
         return cmd_buff
+
+
+    def __get_compiler_semantic_version_parts(self):
+        major_release_ver = int(self.compiler_version.split('.')[0])
+        minor_release_ver = int(self.compiler_version.split('.')[1])
+        patch_release_ver = int(self.compiler_version.split('.')[2][0])
+        return (major_release_ver, minor_release_ver, patch_release_ver)
+
 
     def __collect_results_ast(self, ast_obj, source_uri):
         res = dict()
@@ -292,6 +298,7 @@ class CompilerWrapper:
         for output in asm_obj['output']:
             if not self.debug:
                 asm_items.append({ 'opcode': output['opcode'] })
+                asm_items.append({ 'hex': output['hex'] })
                 continue
             
             match = re.match(SOURCE_REG, output['src'])
@@ -320,6 +327,7 @@ class CompilerWrapper:
                 
                 asm_items.append({
                     'opcode': output['opcode'],
+                    'hex': output['hex'],
                     'stack': output['stack'],
                     'pos': pos,
                     'debugTag': debug_tag
@@ -382,8 +390,15 @@ class CompilerWrapper:
     def get_asm_as_string(asm_objs):
         res_buff = []
         for item in asm_objs:
-           res_buff.append(item['opcode'].strip()) 
+           res_buff.append(item['opcode']) 
         return ' '.join(res_buff)
+
+    @staticmethod
+    def get_hex_script(asm_objs):
+        res_buff = []
+        for item in asm_objs:
+           res_buff.append(item['hex']) 
+        return ''.join(res_buff)
 
     @staticmethod
     def get_full_source_path(rel_path, base_dir, cur_file_name):

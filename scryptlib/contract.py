@@ -12,20 +12,6 @@ from scryptlib.serializer import serialize_state
 
 class ContractBase:
 
-    #def __init__(self):
-    #    self.calls = dict()
-    #    self.asm_vars = None
-    #    self._data_part = None
-
-    #def replace_asm_vars(self, asm_var_values):
-    #    self.asm_vars = asm_var_values
-    #    self.scripted_constructor.initialize(asm_vars)
-
-    #def run_verify(self, tx_input_context, interpreter_limits):
-    #    # Set output script to verify sciptSig against.
-    #    tx_input_context.utxo.script_pubkey = self.locking_script
-    #    return tx_input_context.verify_input(interpreter_limits)
-
     def set_data_part(self, state):
         if isinstance(state, bytes):
             self._data_part = state
@@ -70,9 +56,9 @@ def build_contract_class(desc):
     def constructor(self, *args, **kwargs):
         self.calls = dict()
         self._data_part = None
-        self.asm_vars = kwargs.get('asm_vars')
+        self.inline_asm_vars = kwargs.get('asm_vars')
 
-        self.scripted_constructor = self.abi_coder.encode_constructor_call(self, self.asm, *args)
+        self.scripted_constructor = self.abi_coder.encode_constructor_call(self, self.hex, *args)
 
     @classmethod
     def from_asm(cls, asm):
@@ -84,15 +70,12 @@ def build_contract_class(desc):
     def from_hex(cls, val):
         return cls.from_asm(Script.from_hex(val).to_asm())
 
-    @property
-    def asm_vars(self):
-        return self.get_asm_vars(self.asm, self.scripted_constructor.to_asm())
-
     contract_class_attribs = dict()
     contract_class_attribs['__init__'] = constructor
     contract_class_attribs['contract_name'] = desc['contract']
     contract_class_attribs['abi'] = desc['abi']
     contract_class_attribs['asm'] = desc['asm']
+    contract_class_attribs['hex'] = desc['hex']
     contract_class_attribs['abi_coder'] = ABICoder(desc['abi'], desc.get('alias', []))
     contract_class_attribs['file'] = desc['file']
     contract_class_attribs['structs'] = desc['structs']
