@@ -149,9 +149,7 @@ class CompilerWrapper:
                  debug = True,
                  optimize = False,
                  stack = True,
-                 st = datetime.now(),
                  timeout = 1200,
-                 out_files = dict(),
                  cmd_args = None,
                  cwd = Path('.')):
         self.out_dir = Path(out_dir)
@@ -163,9 +161,7 @@ class CompilerWrapper:
         self.optimize = optimize
         self.ast = True
         self.desc = True
-        self.st = st
         self.timeout = timeout
-        self.out_files = out_files
         self.cmd_args = cmd_args
         self.cwd = cwd
         self.compiler_version = self.get_compiler_version(compiler_bin)
