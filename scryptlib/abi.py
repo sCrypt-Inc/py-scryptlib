@@ -84,7 +84,7 @@ class ABICoder:
         res = []
         for idx, arg in enumerate(args):
             res.append(self.encode_param(arg, param_entities[idx]))
-        return ' '.join(res)
+        return ''.join(res)
 
     def encode_param(self, arg, param_entity):
         resolved_type = utils.resolve_type(param_entity['type'], self.aliases)
@@ -135,7 +135,7 @@ class ABICoder:
         res_buff = []
         for arg in utils.flatten_array(args, param_entity['name'], resolved_type):
             res_buff.append(self.encode_param(arg['value'], { 'name': arg['name'], 'type': arg['type'] }))
-        return ' '.join(res_buff)
+        return ''.join(res_buff)
 
     def abi_constructor(self):
         constructor_abi = None
