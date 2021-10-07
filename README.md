@@ -1,7 +1,7 @@
 # scryptlib-python
 A Python SDK for [sCrypt](https://scrypt.io/).
 
-[![Build Status](https://travis-ci.com/sCrypt-Inc/scryptlib-python.svg?branch=main)](https://travis-ci.com/sCrypt-Inc/scryptlib-python)
+[![Build Status](https://app.travis-ci.com/sCrypt-Inc/py-scryptlib.svg?branch=main)](https://travis-ci.com/sCrypt-Inc/py-scryptlib)
 
 You can learn all about writing sCrypt smart contracts in the official [docs](https://scryptdoc.readthedocs.io/en/latest/intro.html).
 
