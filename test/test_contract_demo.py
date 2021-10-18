@@ -2,10 +2,6 @@ import pytest
 
 import scryptlib.utils
 import scryptlib.contract
-from scryptlib.types import SigHashPreimage, Int
-
-import bitcoinx
-from bitcoinx import SigHash, TxOutput, Script
 
 
 contract = './test/res/demo.scrypt'

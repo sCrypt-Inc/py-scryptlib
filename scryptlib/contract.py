@@ -121,6 +121,8 @@ def build_struct_classes(desc):
 
 
 def build_type_classes(desc):
+    # TODO: Type class constructors shold accept primitive types like ints and bytes where applicable.
+    #       They also should accept lists.
     struct_classes = build_struct_classes(desc)
 
     alias_classes = dict()

@@ -7,7 +7,21 @@ You can learn all about writing sCrypt smart contracts in the official [docs](ht
 
 ## Installation
 
-To use the SDK, you need to get a copy of the [sCrypt compiler](https://scrypt.io/#download).
+### Compiler
+
+To use the SDK, you need to get a copy of the sCrypt compiler. You can get it either by downloading the [sCrypt IDE](https://scrypt.io/#download) or executing the following command, if you have an UNIX-like OS:
+```sh
+curl -Ls https://scrypt.io/setup | sh -s --
+```
+
+This will download the latest version of the compiler.
+
+You can also download a specific version of the compiler using the `-v` flag:
+```sh
+curl -Ls https://scrypt.io/setup | sh -s -- -v 1.3.2
+```
+
+### SDK
 
 You can install the SDK as a Python package using `pip`, either directly from the project folder:
 

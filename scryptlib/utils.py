@@ -3,6 +3,7 @@ import errno
 import re
 import os
 import math
+import subprocess
 from pathlib import Path
 
 import bitcoinx
@@ -26,6 +27,8 @@ def compile_contract(contract, out_dir=None, compiler_bin=None, from_string=Fals
     
     if not compiler_bin:
         compiler_bin = find_compiler()
+
+    # TODO: Check compiler version compatibility.
 
     if not out_dir:
         out_dir = Path('./out')
@@ -54,43 +57,22 @@ def find_compiler():
     scryptc = None
 
     if sys.platform.startswith('linux'):
-        scryptc = find_compiler_linux()
+        path_suffix = 'compiler/scryptc/linux/scryptc'
     elif sys.platform == 'darwin':
-        scryptc = find_compiler_darwin()
+        path_suffix = 'compiler/scryptc/mac/scryptc'
     elif sys.platform == 'win32' or sys.platform == 'cygwin':
-        scryptc = find_compiler_windows()
+        path_suffix = 'compiler/scryptc/win32/scryptc.exe'
 
+    scryptc = search_known_compiler_locations(path_suffix)
     return scryptc
         
 
-def find_compiler_linux():
-    path_suffix = 'compiler/scryptc/linux/scryptc'
-
+def search_known_compiler_locations(path_suffix):
     res = find_compiler_local(path_suffix)
     if res:
         return res
 
-    res = find_compiler_vscode(path_suffix)
-    if res:
-        return res
-
-
-def find_compiler_darwin():
-    path_suffix = 'compiler/scryptc/mac/scryptc'
-
-    res = find_compiler_local(path_suffix)
-    if res:
-        return res
-
-    res = find_compiler_vscode(path_suffix)
-    if res:
-        return res
-
-
-def find_compiler_windows():
-    path_suffix = 'compiler/scryptc/win32/scryptc.exe'
-
-    res = find_compiler_local(path_suffix)
+    res = find_compiler_PATH()
     if res:
         return res
 
@@ -123,6 +105,16 @@ def find_compiler_local(path_suffix):
     path = Path('./') / path_suffix
     if path.exists():
         return path
+
+
+def find_compiler_PATH():
+    try:
+        stdout_string = subprocess.check_output(["scryptc", "--help"], stderr=subprocess.STDOUT)
+    except:
+        return None
+    stdout_string = subprocess.check_output(["which", "scryptc"], stderr=subprocess.STDOUT)
+    return bytes.decode(stdout_string, encoding='utf-8').replace('\n', '')
+
 
 
 def to_literal_array_type(type_name, sizes):

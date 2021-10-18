@@ -56,34 +56,34 @@ arraydemo = ArrayDemo(33, [
         ],
             [[[ST1({
                 'x': False,
-                'y': Bytes(bytes.fromhex('aa')),
+                'y': Bytes('aa'),
                 'i': 1
             }), ST1({
-                'y': Bytes(bytes.fromhex('bb')),
+                'y': Bytes('bb'),
                 'x': True,
                 'i': 2
             })], [ST1({
                 'x': False,
-                'y': Bytes(bytes.fromhex('cc')),
+                'y': Bytes('cc'),
                 'i': 3
             }), ST1({
-                'y': Bytes(bytes.fromhex('dd')),
+                'y': Bytes('dd'),
                 'x': True,
                 'i': 4
             })]], [[ST1({
                 'x': False,
-                'y': Bytes(bytes.fromhex('ee')),
+                'y': Bytes('ee'),
                 'i': 5
             }), ST1({
-                'y': Bytes(bytes.fromhex('ff')),
+                'y': Bytes('ff'),
                 'x': True,
                 'i': 6
             })], [ST1({
                 'x': False,
-                'y': Bytes(bytes.fromhex('00')),
+                'y': Bytes('00'),
                 'i': 7
             }), ST1({
-                'y': Bytes(bytes.fromhex('11')),
+                'y': Bytes('11'),
                 'x': True,
                 'i': 8
             })]]]

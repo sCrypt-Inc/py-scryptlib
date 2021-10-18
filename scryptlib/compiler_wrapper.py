@@ -87,7 +87,6 @@ class CompilerResult:
             warnings=[],
             compiler_version=None,
             contract=None,
-            md5=None,
             structs=[],
             alias=[],
             source_file=None,
@@ -101,7 +100,6 @@ class CompilerResult:
         self.warnings = warnings
         self.compiler_version = compiler_version
         self.contract = contract
-        self.md5 = md5
         self.structs = structs
         self.alias = alias
         self.source_file = source_file
@@ -123,7 +121,6 @@ class CompilerResult:
                 'hex': CompilerWrapper.get_hex_script(self.asm),
                 'sources': [],
                 'sourceMap': [],
-                'md5': self.source_md5
             }
 
         if source_map:
@@ -154,7 +151,7 @@ class CompilerWrapper:
                  cwd = Path('.')):
         self.out_dir = Path(out_dir)
         self.compiler_bin = compiler_bin
-        self.asm = True
+        self.asm = True     # TODO: Are asm, ast, desc flags even needed?
         self.hex_out = True
         self.debug = debug
         self.stack = stack
@@ -212,7 +209,7 @@ class CompilerWrapper:
             out_files['asm'] = out_file_asm
             asm_obj = self.load_json(out_file_asm)
             compiler_result_params['compiler_out_asm'] = asm_obj
-            asm_res = self.__collect_results_asm(asm_obj, source)
+            asm_res = self.__collect_results_asm(asm_obj)
             compiler_result_params.update(asm_res)
 
         compiler_result_params['compiler_version'] = self.compiler_version
@@ -229,12 +226,10 @@ class CompilerWrapper:
                 json.dump(desc_res, f, indent=4)
 
         # TODO: Clean up out files.
-        return CompilerResult(**compiler_result_params)
+        return compiler_res
 
     def __assemble_compiler_cmd(self, source, from_file):
         cmd_buff = [self.compiler_bin, 'compile']
-
-        major_release_ver, minor_release_ver, patch_release_ver = self.__get_compiler_semantic_version_parts()
 
         if self.asm:
             cmd_buff.append('--asm')
@@ -245,9 +240,7 @@ class CompilerWrapper:
         if self.debug:
             cmd_buff.append('--debug')
         if self.stack:
-            if major_release_ver >= 1:
-                if minor_release_ver >= 1 or patch_release_ver >= 3:
-                    cmd_buff.append('--stack')
+            cmd_buff.append('--stack')
                     
         if self.optimize:
             cmd_buff.append('--optimize')
@@ -279,13 +272,13 @@ class CompilerWrapper:
         res['ast'] = ast_root
         abi_declaration = self.ast_get_abi_declaration(ast_root, aliases, static_int_consts)
         res['abi'] = abi_declaration['abi']
+        res['structs'] = self.ast_get_struct_declarations(ast_obj)
         del ast_obj[source_uri]
         res['dep_ast'] = ast_obj
         res['contract'] = abi_declaration['contract']
-        res['structs'] = self.ast_get_struct_declarations(ast_root, ast_obj)
         return res
 
-    def __collect_results_asm(self, asm_obj, source):
+    def __collect_results_asm(self, asm_obj):
         res = dict()
         sources = asm_obj['sources']
         sources_fullpath = self.get_sources_fullpath(sources)
@@ -306,13 +299,13 @@ class CompilerWrapper:
                 if tag_str:
                     if re.search(r'\w+\.\w+:0', tag_str):
                         debug_tag = DebugModeTag.FUNC_START
-                    if re.search(r'\w+\.\w+:1', tag_str):
+                    elif re.search(r'\w+\.\w+:1', tag_str):
                         debug_tag = DebugModeTag.FUNC_END
-                    if re.search(r'loop:0', tag_str):
+                    elif re.search(r'loop:0', tag_str):
                         debug_tag = DebugModeTag.LOOP_START
 
                 pos = None
-                if len(sources) > file_idx:
+                if file_idx != -1 and len(sources) > file_idx:
                     pos = {
                         'file': sources_fullpath[file_idx],
                         'line': int(match.group('line')),
@@ -468,13 +461,9 @@ class CompilerWrapper:
         return { 'contract': main_contract_name, 'abi': interfaces }
 
     @staticmethod
-    def ast_get_struct_declarations(ast_root, dependency_asts):
+    def ast_get_struct_declarations(ast_obj):
         res = []
-        all_asts = [ast_root]
-        for key in dependency_asts.keys():
-            all_asts.append(dependency_asts[key])
-
-        for ast in all_asts:
+        for _, ast in ast_obj.items():
             for struct in ast['structs']:
                 name = struct['name']
                 params = []
@@ -539,15 +528,15 @@ class CompilerWrapper:
         else:
             resolved_type = utils.resolve_type(type_str, aliases)
 
-        if utils.is_struct_type(resolved_type):
-            return utils.get_struct_name_by_type(resolved_type)
-        elif utils.is_array_type(resolved_type):
-            elem_type_name, array_sizes = utils.factorize_array_type_str(resolved_type)
+        #if utils.is_struct_type(resolved_type):
+        #    return utils.get_struct_name_by_type(resolved_type)
+        #elif utils.is_array_type(resolved_type):
+        #    elem_type_name, array_sizes = utils.factorize_array_type_str(resolved_type)
 
-            if utils.is_struct_type(elem_type_name):
-                elem_type_name = utils.get_struct_name_by_type(resolved_type)
+        #    if utils.is_struct_type(elem_type_name):
+        #        elem_type_name = utils.get_struct_name_by_type(resolved_type)
 
-            return utils.to_literal_array_type(elem_type_name, array_sizes)
+        #    return utils.to_literal_array_type(elem_type_name, array_sizes)
 
         return resolved_type
 
@@ -620,7 +609,7 @@ class CompilerWrapper:
     @staticmethod
     def get_warnings(compiler_output):
         warnings = []
-        for match in  re.finditer(WARNING_REG, compiler_output):
+        for match in re.finditer(WARNING_REG, compiler_output):
             file_path = match.group('filePath')
 
             line = int(match.group('line'))
