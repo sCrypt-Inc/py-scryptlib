@@ -1,6 +1,6 @@
 import scryptlib.utils
+from scryptlib.types import *
 
-import bitcoinx
 from bitcoinx import pack_byte, le_bytes_to_int
 from bitcoinx.script import *
 
@@ -48,6 +48,21 @@ def serialize_bytes(val):
     return scryptlib.utils.get_push_item(val)
 
 
+def serialize_scrypt_type(val):
+    if isinstance(val, Bool):
+        return serialize_bool(val.value)
+    elif isinstance(val, Int):
+        return serialize_int(val.value)
+    return bytes.fromhex(val.hex)
+
+
+def serialize_array(val):
+    buff = []
+    for elem in val:
+        buff.append(serialize(elem))
+    return b''.join(buff)
+
+
 def serialize_with_schema(state, key, schema):
     dtype = schema[key].__name__
     if dtype == 'bool':
@@ -70,6 +85,10 @@ def serialize(val):
         return serialize_string(val)
     elif isinstance(val, bytes):
         return serialize_bytes(val)
+    elif isinstance(val, ScryptType):
+        return serialize_scrypt_type(val)
+    elif isinstance(val, list):
+        return serialize_array(val)
     raise Exception('Invalid data type "{}".'.format(val.__class__))
 
 

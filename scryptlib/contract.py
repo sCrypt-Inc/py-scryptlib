@@ -1,6 +1,5 @@
 from functools import partialmethod
 
-import bitcoinx
 from bitcoinx import Script, OP_RETURN
 
 import scryptlib.utils as utils
@@ -14,31 +13,46 @@ class ContractBase:
 
     def set_data_part(self, state):
         if isinstance(state, bytes):
-            self._data_part = state
+            self._manual_data_part = Script(state)
         elif isinstance(state, str):
-            self._data_part = bytes.fromhex(state)
+            self._manual_data_part = Script(bytes.fromhex(state))
         elif isinstance(state, dict):
-            self._data_part = serialize_state(state)
+            self._manual_data_part = Script(serialize_state(state))
         else:
             raise NotImplementedError('Invalid object type for contract data part "{}".'.format(state.__class__))
 
     @property
     def locking_script(self):
-        ls = self.scripted_constructor.locking_script
-        if self._data_part and len(self._data_part) > 0:
+        ls = self._code_part
+        data_part = self.data_part
+        if data_part and len(data_part) > 0:
             ls = ls << OP_RETURN
-            ls = ls << Script(self._data_part)
+            ls = ls << data_part
         return ls
 
     @property
     def code_part(self):
-        return self.scripted_constructor.locking_script << OP_RETURN
+        return self._code_part << OP_RETURN
 
     @property
     def data_part(self):
-        if self._data_part:
-            return Script(self._data_part)
-        return None
+        if self._manual_data_part:
+            return self._manual_data_part
+        return self.abi_coder.get_ls_data_part(self)
+
+    def get_state_script(self, vals_dict):
+        '''
+        Returns a locking script object with data part updated with values passed in  the vals_dict parameter.
+        This doesn't update the actual contracts state variables values.
+
+        Parameters
+        ----------
+        vals_dict: dict
+            A dictionary with contracts statefull variable names as keys and values of according ScryptType or primitive type.
+        '''
+        ls = self._code_part
+        ls = ls << OP_RETURN
+        return ls << self.abi_coder.get_ls_data_part(self, custom_vals_dict=vals_dict)
 
     @staticmethod
     def find_src_info():
@@ -55,20 +69,24 @@ def build_contract_class(desc):
 
     def constructor(self, *args, **kwargs):
         self.calls = dict()
-        self._data_part = None
         self.inline_asm_vars = kwargs.get('asm_vars')
 
-        self.scripted_constructor = self.abi_coder.encode_constructor_call(self, self.hex, *args)
+        self._code_part = self.abi_coder.get_ls_code_part(self, self.hex, *args)
+        self._manual_data_part = None
 
     @classmethod
     def from_asm(cls, asm):
-        contract_obj = cls()
-        contract_obj.scripted_constructor = cls.abi_coder.encode_constructor_call_from_asm(contract_obj, asm)
-        return contract_obj
+        # TODO
+        #contract_obj = cls()
+        #contract_obj.scripted_constructor = cls.abi_coder.encode_constructor_call_from_asm(contract_obj, asm)
+        #return contract_obj
+        return
 
     @classmethod
     def from_hex(cls, val):
-        return cls.from_asm(Script.from_hex(val).to_asm())
+        # TODO
+        #return cls.from_asm(Script.from_hex(val).to_asm())
+        return
 
     contract_class_attribs = dict()
     contract_class_attribs['__init__'] = constructor
@@ -80,19 +98,26 @@ def build_contract_class(desc):
     contract_class_attribs['file'] = desc['file']
     contract_class_attribs['structs'] = desc['structs']
     for entity in desc['abi']:
-        # TODO: Is it possible to avoid these conflicts?
-        if not 'name' in entity:
-            continue
-        entity_name = entity['name']
-        if entity_name in dir(ContractBase) or entity_name in contract_class_attribs:
-            raise Exception('Method name "{}" conflicts with ContractClass member name.'.format(entity_name))
+        entity_type = entity['type']
+        if entity_type == 'function':
+            entity_name = entity['name']
+            # TODO: Is it possible to avoid these conflicts?
+            if entity_name in dir(ContractBase) or entity_name in contract_class_attribs:
+                raise Exception('Public function name "{}" conflicts with ContractClass member name.'.format(entity_name))
 
-        def func_call_handler(self, entity_name, *args):
-            call = contract_class_attribs['abi_coder'].encode_pub_function_call(self, entity_name, *args)
-            self.calls[entity_name] = call
-            return call
+            def func_call_handler(self, entity_name, *args):
+                call = contract_class_attribs['abi_coder'].encode_pub_function_call(self, entity_name, *args)
+                self.calls[entity_name] = call
+                return call
 
-        contract_class_attribs[entity_name] = partialmethod(func_call_handler, entity_name)
+            contract_class_attribs[entity_name] = partialmethod(func_call_handler, entity_name)
+        elif entity_type == 'constructor':
+            for param in entity['params']:
+                if param['state']:
+                    param_name = param['name']
+                    if param_name in dir(ContractBase) or param_name in contract_class_attribs:
+                        raise Exception('Statefull variable name "{}" conflicts with ContractClass member name.'.format(param_name))
+                    contract_class_attribs[param_name] = None
 
     return type('Contract', (ContractBase,), contract_class_attribs)
 

@@ -2,7 +2,6 @@ import re
 import json
 import subprocess
 import hashlib
-from datetime import datetime
 from pathlib import Path
 from enum import Enum
 
@@ -512,12 +511,14 @@ class CompilerWrapper:
             for param in constructor['params']:
                 p_name = param['name']
                 p_type = param['type']
-                params.append({ 'name': p_name, 'type': p_type })
+                p_state = False
+                params.append({ 'name': p_name, 'type': p_type, 'state': p_state })
         elif properties:
             for prop in properties:
                 p_name = prop['name'].replace('this.', '')
                 p_type = prop['type']
-                params.append({ 'name': p_name, 'type': p_type })
+                p_state = prop['state']
+                params.append({ 'name': p_name, 'type': p_type, 'state': p_state })
         return {'type': 'constructor', 'params': params}
 
     @staticmethod

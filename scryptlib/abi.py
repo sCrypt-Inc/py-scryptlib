@@ -1,10 +1,17 @@
 import copy
 import re
-from bitcoinx import TxInputContext, InterpreterLimits, MinerPolicy, Script, pack_byte
+from bitcoinx import TxInputContext, InterpreterLimits, MinerPolicy, Script
 
 import scryptlib.utils as utils
 from scryptlib.compiler_wrapper import ABIEntityType
 from scryptlib.types import Struct, Int, Bool
+from scryptlib.serializer import serialize
+
+
+# TODO: Make type checking simpler.
+
+
+CONTRACT_STATE_VERSION = 0
 
 
 class ABICoder:
@@ -13,9 +20,9 @@ class ABICoder:
         self.abi = abi
         self.aliases = aliases
 
-    def encode_constructor_call(self, contract, hex_script, *args):
+    def get_ls_code_part(self, contract, hex_script, *args):
         abi_constructor = self.abi_constructor()
-        c_params = self.__get_abi_params(abi_constructor)
+        c_params = abi_constructor.get('params', [])
 
         if len(args) != len(c_params):
             raise Exception('Wrong number of arguments passed to constructor. ' \
@@ -27,45 +34,111 @@ class ABICoder:
             arg = args[idx]
             arg = utils.primitives_to_scrypt_types(arg)
             resolved_type = utils.resolve_type(param['type'], self.aliases)
+            is_param_statefull = param['state']
             if utils.is_array_type(resolved_type):
                 elem_type, array_sizes = utils.factorize_array_type_str(resolved_type)
 
                 if not utils.check_array(arg, elem_type, array_sizes):
-                    raise Exception('Constructors parameter with index {} should be of type "{}".'.format(idx, resolved_type))
-
+                    raise Exception('Constructors parameter with index {} should be array of type "{}".'.format(idx, resolved_type))
                 flattened_arr = utils.flatten_array(arg, param['name'], resolved_type)
                 for obj in flattened_arr:
-                    _c_params.append({ 'name': obj['name'], 'type': obj['type'] })
+                    _c_params.append({ 'name': obj['name'], 
+                                       'type': obj['type'],
+                                       'state': is_param_statefull })
                     _args.append(obj['value'])
             elif utils.is_struct_type(resolved_type):
                 if arg.final_type != resolved_type:
-                    raise Exception('Constructors parameter with index {} should be Struct object of type "{}". ' \
+                    raise Exception('Constructors parameter with index {} should be struct of type "{}". ' \
                             'Got struct of type "{}" instead.'.format(idx, param['type'], arg.type_str))
 
                 flattened_struct = utils.flatten_struct(arg, param['name'])
                 for obj in flattened_struct:
-                    _c_params.append({ 'name': obj['name'], 'type': obj['type'] })
+                    _c_params.append({ 'name': obj['name'], 
+                                       'type': obj['type'],
+                                       'state': is_param_statefull })
                     _args.append(obj['value'])
             else:
                 _c_params.append(param)
                 _args.append(arg)
+
+            if is_param_statefull:
+                # If a statefull variable, set the passed value as a member of the contract object.
+                setattr(contract, param['name'], arg)
 
         finalized_hex_script = hex_script
         for idx, param in enumerate(_c_params):
             if not '<{}>'.format(param['name']) in hex_script:
                 raise Exception('Missing "{}" contract constructor parameter in passed args.'.format(param['name']))
             param_regex = re.compile(escape_str_for_regex('<{}>'.format(param['name'])))
-            finalized_hex_script = re.sub(param_regex, self.encode_param(_args[idx], param), finalized_hex_script)
+            if param['state']:
+                # State variables need only a placeholder value as they will get replaced during script execution.
+                finalized_hex_script = re.sub(param_regex, '00', finalized_hex_script)
+            else:
+                finalized_hex_script = re.sub(param_regex, self.encode_param(_args[idx], param), finalized_hex_script)
+
+
+        finalized_hex_script = re.sub('<__codePart__>', '00', finalized_hex_script)
 
         # Replace inline assembly variable placeholders in locking script with the actual arguments.
-        # TODO: Check if each value if instance of ScryptType
+        # TODO: Check if each value is instance of ScryptType
         if contract.inline_asm_vars:
             for key, val in contract.inline_asm_vars.items():
                 param_regex = re.compile(escape_str_for_regex('<{}>'.format(key)))
                 finalized_hex_script = re.sub(param_regex, val.hex, finalized_hex_script)
 
-        locking_script = Script.from_hex(finalized_hex_script)
-        return FunctionCall('constructor', args, contract, locking_script=locking_script)
+        return Script.from_hex(finalized_hex_script)
+        #locking_script = Script.from_hex(finalized_hex_script)
+        #return FunctionCall('constructor', args, contract, locking_script=locking_script)
+
+
+    def get_ls_data_part(self, contract, custom_vals_dict=None):
+        abi_constructor = self.abi_constructor()
+        c_params = abi_constructor.get('params', [])
+
+        state_buff = []
+
+        for param in c_params:
+            if not param['state']:
+                continue
+
+            param_name = param['name']
+            resolved_type = utils.resolve_type(param['type'], self.aliases)
+
+            if custom_vals_dict:
+                val = custom_vals_dict[param_name]
+            else:
+                val = getattr(contract, param_name, None)
+                if not val:
+                    raise Exception('Statefull variable "{}" has no value.'.format(param_name))
+
+            val = utils.primitives_to_scrypt_types(val)
+
+            # Do type checking.
+            if utils.is_array_type(resolved_type):
+                elem_type, array_sizes = utils.factorize_array_type_str(resolved_type)
+                if not utils.check_array(val, elem_type, array_sizes):
+                    raise Exception('Statefull variable "{}" should be array of type "{}".'.format(param_name, resolved_type))
+            elif utils.is_struct_type(resolved_type):
+                if val.final_type != resolved_type:
+                    raise Exception('Statefull variable "{}" should be struct of type "{}". ' \
+                            'Got struct of type "{}" instead.'.format(param_name, param['type'], val.type_str))
+            else:
+                if val.final_type != resolved_type:
+                    raise Exception('Statefull variable "{}" should be of type "{}". ' \
+                            'Got object of type "{}" instead.'.format(param_name, param['type'], val.type_str))
+
+            state_buff.append(serialize(val).hex())
+
+        # State length and state version.
+        state_len = 0
+        for elem in state_buff:
+            state_len += len(elem) // 2
+        if state_len > 0:
+            size_bytes = state_len.to_bytes(4, 'little')
+            state_buff.append(size_bytes.hex())
+            state_buff.append(CONTRACT_STATE_VERSION.to_bytes(1, 'little').hex())
+
+        return Script.from_hex(''.join(state_buff))
 
     def encode_pub_function_call(self, contract, name, *args):
         for entity in self.abi:
@@ -145,19 +218,14 @@ class ABICoder:
                 break
         return constructor_abi
 
-    @staticmethod
-    def __get_abi_params(abi_entity):
-        return abi_entity.get('params', [])
-
 
 class FunctionCall:
 
-    def __init__(self, method_name, params, contract, locking_script=None, unlocking_script=None):
-        if not (locking_script or unlocking_script):
-            raise Exception('Binding locking_script and unlocking_script can\'t both be empty.')
+    def __init__(self, method_name, params, contract, unlocking_script=None):
+        if not unlocking_script:
+            raise Exception('Binding unlocking_script can\'t be empty.')
 
         self.contract = contract
-        self.locking_script = locking_script
         self.unlocking_script = unlocking_script
         self.method_name = method_name
 

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import bitcoinx
 from bitcoinx import Script, Tx, TxInput, TxOutput, TxInputContext, SigHash, \
-        pack_le_int32, pack_le_uint32, pack_le_uint16, ScriptError, pack_byte, Ops, \
+        pack_le_int32, pack_le_uint32, pack_le_uint16, pack_byte, Ops, \
         int_to_le_bytes
 
 from scryptlib.compiler_wrapper import CompilerWrapper
