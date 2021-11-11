@@ -234,7 +234,7 @@ def check_struct(struct_ast, struct, type_resolver):
                     raise Exception('scryptlib.types.Struct "{}" property "{}" should be "{}".'.format(
                                         struct_ast['name'], param['name'], param_final_type))
             else:
-                raise Exception('Wrong argument type. Expected "{}", but got "{}".'.format(final_type, param_final_type))
+                raise Exception('Wrong argument type. Expected "{}", but got "{}".'.format(param_final_type, final_type))
 
     members = []
     for param in struct_ast['params']:
