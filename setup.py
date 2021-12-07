@@ -31,9 +31,9 @@ setup(long_description=long_description,
       description='Python SDK for integration of sCrypt Bitcoin SV smart contracts.',
       keywords='scrypt scryptlib bitcoin bsv blockchain',
       author='Kala',
-      url='https://www.github.com/kala-tech/py-scryptlib',
+      url='https://www.github.com/sCrypt-Inc/py-scryptlib',
       packages=['scryptlib'],
-      install_requires=['bitcoinX'],
+      install_requires=['bitcoinX==0.6.0'],
       python_requires='>=3.7',
 
       # Dependencies to run all tests.

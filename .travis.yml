@@ -10,7 +10,6 @@ install:
   - pip install -r requirements.txt
   - pip install ".[testing]"
 script:
-  - git clone -b master https://github.com/sCrypt-Inc/compiler_dist.git compiler
-  - cd compiler && npm run dl
+  - curl -Ls https://scrypt.io/setup | sh -s -- -f -v 1.6.1
   - cd -
   - pytest
