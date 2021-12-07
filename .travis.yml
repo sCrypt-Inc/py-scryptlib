@@ -12,5 +12,5 @@ install:
   - pip install ".[testing]"
 script:
   - curl -Ls https://scrypt.io/setup | sudo sh -s -- -f -v 1.6.1
-  - cd -
+  - cd /home/travis/build/sCrypt-Inc/py-scryptlib
   - pytest
