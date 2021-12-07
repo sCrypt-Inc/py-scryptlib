@@ -76,20 +76,47 @@ def serialize_with_schema(state, key, schema):
     raise Exception('Invalid data type "{}".'.format(dtype))
 
 
-def serialize(val):
+def serialize(val, len_prefix=True):
     if isinstance(val, bool):
-        return serialize_bool(val)
+        res = serialize_bool(val)
     elif isinstance(val, int):
-        return serialize_int(val)
+        res = serialize_int(val)
     elif isinstance(val, str):
-        return serialize_string(val)
+        res = serialize_string(val)
     elif isinstance(val, bytes):
-        return serialize_bytes(val)
+        res = serialize_bytes(val)
     elif isinstance(val, ScryptType):
-        return serialize_scrypt_type(val)
+        res = serialize_scrypt_type(val)
     elif isinstance(val, list):
-        return serialize_array(val)
-    raise Exception('Invalid data type "{}".'.format(val.__class__))
+        res = serialize_array(val)
+    else:
+        raise Exception('Invalid data type "{}".'.format(val.__class__))
+
+    if not len_prefix:
+        return drop_len_prefix(res)
+    return res
+
+
+def drop_len_prefix(data):
+    assert(isinstance(data, bytes))
+
+    if len(data) < 2:
+        return data
+    
+    first_byte = data[0:1]
+    if first_byte >= b'\x01' and first_byte <= b'\x4b':
+        return data[1:]
+    if first_byte == b'\x4c':
+        # OP_PUSHDATA1
+        return data[2:]
+    elif first_byte == b'\x4d':
+        # OP_PUSHDATA2
+        return data[3:]
+    elif first_byte == b'\x4e':
+        # OP_PUSHDATA2
+        return data[5:]
+    raise Exception('Invalid first byte "{}".'.format(first_byte))
+
 
 
 def serialize_state(state, length_label_size=STATE_LEN_2BYTES, schema=None):

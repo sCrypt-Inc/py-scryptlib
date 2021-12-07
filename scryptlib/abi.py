@@ -4,7 +4,7 @@ from bitcoinx import TxInputContext, InterpreterLimits, MinerPolicy, Script
 
 import scryptlib.utils as utils
 from scryptlib.compiler_wrapper import ABIEntityType
-from scryptlib.types import Struct, Int, Bool
+from scryptlib.types import Struct, Int, Bool, Bytes
 from scryptlib.serializer import serialize
 
 
@@ -72,7 +72,7 @@ class ABICoder:
             param_regex = re.compile(escape_str_for_regex('<{}>'.format(param['name'])))
             if param['state']:
                 # State variables need only a placeholder value as they will get replaced during script execution.
-                finalized_hex_script = re.sub(param_regex, '00', finalized_hex_script)
+                finalized_hex_script = re.sub(param_regex, '0100', finalized_hex_script)
             else:
                 finalized_hex_script = re.sub(param_regex, self.encode_param(_args[idx], param), finalized_hex_script)
 
@@ -187,6 +187,8 @@ class ABICoder:
             arg = Bool(arg)
         elif isinstance(arg, int):
             arg = Int(arg)
+        elif isinstance(arg, bytes):
+            arg = Bytes(arg)
 
         return arg.hex
 

@@ -4,6 +4,7 @@ import re
 import os
 import math
 import subprocess
+import hashlib
 from pathlib import Path
 
 import bitcoinx
@@ -12,7 +13,8 @@ from bitcoinx import Script, Tx, TxInput, TxOutput, TxInputContext, SigHash, \
         int_to_le_bytes
 
 from scryptlib.compiler_wrapper import CompilerWrapper
-import scryptlib.types
+from scryptlib.types import *
+from scryptlib.serializer import serialize
 
 
 def compile_contract(contract, out_dir=None, compiler_bin=None, from_string=False, debug=True):
@@ -153,7 +155,7 @@ def resolve_type(type_str, aliases):
         if alias['name'] == type_str:
             return resolve_type(alias['type'], aliases)
 
-    if type_str in scryptlib.types.BASIC_SCRYPT_TYPES:
+    if type_str in BASIC_SCRYPT_TYPES:
         return type_str
     else:
         return 'struct {} {{}}'.format(type_str)
@@ -184,7 +186,7 @@ def factorize_array_type_str(type_str):
 
 
 def type_of_arg(arg):
-    if isinstance(arg, scryptlib.types.ScryptType):
+    if isinstance(arg, ScryptType):
         return arg.final_type
     elif isinstance(arg, bool):
         return 'bool'
@@ -265,13 +267,13 @@ def flatten_array(obj_list, name, resolved_type):
     for idx, obj in enumerate(obj_list):
         # TODO: Throw this checking out. All members should be of scryptlib.types.ScryptType. Use primitives_to_scrypt_types().
         if isinstance(obj, bool):
-            obj = scryptlib.types.Bool(obj)
+            obj = Bool(obj)
         elif isinstance(obj, int):
-            obj = scryptlib.types.Int(obj)
+            obj = Int(obj)
         elif isinstance(obj, list):
             res += flatten_array(obj, '{}[{}]'.format(name, idx), sub_array_type(resolved_type))
             continue
-        elif isinstance(obj, scryptlib.types.Struct):
+        elif isinstance(obj, Struct):
             res += flatten_struct(obj, '{}[{}]'.format(name, idx))
             continue
         res.append({
@@ -283,13 +285,13 @@ def flatten_array(obj_list, name, resolved_type):
 
 
 def flatten_struct(obj, name):
-    assert isinstance(obj, scryptlib.types.Struct)
+    assert isinstance(obj, Struct)
 
     keys = obj.get_members()
     res = []
     for key in keys:
         member = obj.member_by_key(key)
-        if isinstance(member, scryptlib.types.Struct):
+        if isinstance(member, Struct):
             res += flatten_struct(member, '{}.{}'.format(name, key))
         elif isinstance(member, list):
             resolved_type = obj.get_member_ast_final_type(key)
@@ -298,7 +300,7 @@ def flatten_struct(obj, name):
             res.append({
                 'value': member,
                 'name': '{}.{}'.format(name, key),
-                'type': member.type_str
+                'type': member.type_str     # TODO: Support primitive Python types.
                 })
     return res
 
@@ -313,10 +315,10 @@ def primitives_to_scrypt_types(obj):
         for item in obj:
             res.append(primitives_to_scrypt_types(item))
     elif isinstance(obj, bool):
-        res = scryptlib.types.Bool(obj)
+        res = Bool(obj)
     elif isinstance(obj, int):
-        res = scryptlib.types.Int(obj)
-    elif isinstance(obj, scryptlib.types.ScryptType):
+        res = Int(obj)
+    elif isinstance(obj, ScryptType):
         res = obj
 
     if not res:
@@ -420,3 +422,38 @@ def get_preimage_from_input_context(context, sighash_flag=None):
     utxo_value = context.utxo.value
     utxo_script = context.utxo.script_pubkey
     return get_preimage(tx, input_index, utxo_value, utxo_script, sighash_flag)
+
+
+def flatten_sha256(data):
+    '''
+    If data is Struct or a list of ScryptTypes, then hash (SHA256) every element of the flattened structure, concat
+    the resulting hashes and hash again into a single hash.
+    If data is a basic sCrypt type, then hash it's byte value.
+    '''
+    flattened = flatten_data(data)
+    if len(flattened) == 1:
+        hex_val = serialize(flattened[0], len_prefix=False)
+        if hex_val == b'\x00':
+            hex_val = b''
+        return hashlib.sha256(hex_val).digest()
+    hashes_buff = []
+    for e in flattened:
+        hex_val = serialize(e, len_prefix=False)
+        if hex_val == b'\x00':
+            hex_val = b''
+        hashes_buff.append(hashlib.sha256(hex_val).digest())
+    return hashlib.sha256(bytes.fromhex(''.join(hashes_buff))).digest()
+        
+
+def flatten_data(data):
+    '''
+    Turns hierarchical sCrypt object into a single dimensional list of ScryptType values.
+    '''
+    if isinstance(data, list):
+        return [flatten_data(e) for e in data]
+    elif isinstance(data, Struct):
+        keys = data.get_members()
+        return [flatten_data(data.member_by_key(key)) for key in keys]
+    else:
+        return [primitives_to_scrypt_types(data)]
+

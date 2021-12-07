@@ -4,6 +4,7 @@ from bitcoinx import Script, base58_decode_check
 import scryptlib.utils
 
 
+# TODO: Add bytes propery and make scryptlib use bytes instead of hex strings internally.
 # TODO: Throw out asm properties?
 
 
@@ -318,7 +319,6 @@ class Struct(ScryptType):
             return Int(member)
         elif isinstance(member, list):
             return member
-        #return member
         raise Exception('Unknown struct member type "{}" for member "{}".'.format(member.__class__, key))
 
     def get_members(self):
@@ -359,8 +359,164 @@ class Struct(ScryptType):
         for elem in flat_struct:
             res_buff.append(elem['value'].hex)
 
-        #return ''.join(res_buff)
         return Script.from_hex(''.join(res_buff)).to_hex()
+
+
+class HashedMap(ScryptType):
+
+    type_str = 'HashedMap'
+
+    def __init__(self, type_key, type_val, data=None):
+        assert issubclass(type_key, ScryptType)
+        assert issubclass(type_val, ScryptType)
+        if not data:
+            data = dict()
+        assert isinstance(data, dict)
+        self.type_key = type_key
+        self.type_val = type_val
+        super().__init__(data)
+
+    def key_index(self, key):
+        key = scryptlib.utils.primitives_to_scrypt_types(key)
+        key_hash = scryptlib.utils.flatten_sha256(key)
+        assert type(key) == self.type_key
+        self._sort()
+        for i, key_other in enumerate(self.value.keys()):
+            key_hash_other = scryptlib.utils.flatten_sha256(key_other)
+            if key_hash == key_hash_other:
+                return i
+        return None
+
+    def _sort(self):
+        # Sort by keys hashes - ASC
+        new_dict = dict()
+        keys_and_keyhashes = []
+        for key in self.value.keys():
+            key_hash = scryptlib.utils.flatten_sha256(key)
+            keys_and_keyhashes.append((key_hash, key))
+
+        keys_and_keyhashes.sort(key=lambda x:x[0][::-1])
+        for key_hash, key in keys_and_keyhashes[::-1]:
+            new_dict[key] = self.value[key]
+
+        self.value = new_dict
+
+    def set(self, key, val):
+        key = scryptlib.utils.primitives_to_scrypt_types(key)
+        val = scryptlib.utils.primitives_to_scrypt_types(val)
+        assert type(key) == self.type_key
+        assert type(val) == self.type_val
+
+        # TODO: Instead of looping, find other way to directly change
+        #       value of existing entry.
+        #       This currently doesn't work because it checks if it's the same object itself,
+        #       and not only the value.
+        key_hash = scryptlib.utils.flatten_sha256(key)
+        for key_other in self.value.keys():
+            key_hash_other = scryptlib.utils.flatten_sha256(key_other)
+            if key_hash == key_hash_other:
+                self.value[key_other] = val
+                return
+        self.value[key] = val
+
+    def delete(self, key):
+        key_hash = scryptlib.utils.flatten_sha256(key)
+        to_del = None
+        for key_other in self.value.keys():
+            key_hash_other = scryptlib.utils.flatten_sha256(key_other)
+            if key_hash == key_hash_other:
+                to_del = key_other
+                break
+        if to_del:
+            del self.value[to_del]
+        else:
+            raise KeyError('Key not present in this HashedMap.')
+
+    @property
+    def asm(self):
+        return self.hex
+
+    @property
+    def hex(self):
+        res_buff = []
+        self._sort()
+        for key, val in self.value.items():
+            res_buff += scryptlib.utils.flatten_sha256(key).hex()
+            res_buff += scryptlib.utils.flatten_sha256(val).hex()
+        #return (Script() << ''.join(res_buff)).to_hex()
+        return ''.join(res_buff)
+
+
+class HashedSet(ScryptType):
+
+    type_str = 'HashedSet'
+
+    def __init__(self, type_val, data=None):
+        assert issubclass(type_val, ScryptType)
+        if not data:
+            data = set()
+        assert isinstance(data, set)
+        self.type_val = type_val
+        super().__init__(data)
+
+    def key_index(self, key):
+        key = scryptlib.utils.primitives_to_scrypt_types(key)
+        assert type(key) == self.type_key
+        for key_other in enumerate(self.keys_sorted()):
+            if key.hex == key_other.hex:
+                return i
+        return None
+
+    def add(self, key):
+        key = scryptlib.utils.primitives_to_scrypt_types(key)
+        assert type(key) == self.type_val
+
+        # TODO: See set() of HashedMap.
+        key_hash = scryptlib.utils.flatten_sha256(key)
+        for key_other in self.value:
+            key_hash_other = scryptlib.utils.flatten_sha256(key_other)
+            if key_hash == key_hash_other:
+                self.value.add(key_other)
+                return
+        self.value.add(key)
+
+    def delete(self, key):
+        key_hash = scryptlib.utils.flatten_sha256(key)
+        to_del = None
+        for key_other in self.value:
+            key_hash_other = scryptlib.utils.flatten_sha256(key_other)
+            if key_hash == key_hash_other:
+                to_del = key_other
+                break
+        if to_del:
+            self.value.remove(to_del)
+        else:
+            raise KeyError('Key not present in this HashedMap.')
+
+    def keys_sorted(self):
+        # Sort by keys hashes - ASC
+        res = []
+        keys_and_keyhashes = []
+        for key in self.value:
+            key_hash = scryptlib.utils.flatten_sha256(key)
+            keys_and_keyhashes.append((key_hash, key))
+
+        keys_and_keyhashes.sort(key=lambda x:x[0][::-1])
+        for key_hash, key in keys_and_keyhashes[::-1]:
+            res.append(key)
+        
+        return res
+
+    @property
+    def asm(self):
+        return self.hex
+
+    @property
+    def hex(self):
+        res_buff = []
+        for key in self.keys_sorted():
+            res_buff += scryptlib.utils.flatten_sha256(key).hex()
+        return ''.join(res_buff)
         
 
 BASIC_SCRYPT_TYPES = {
@@ -376,5 +532,4 @@ BASIC_SCRYPT_TYPES = {
         'SigHashPreimage': SigHashPreimage,
         'OpCodeType': OpCodeType
     }
-
 

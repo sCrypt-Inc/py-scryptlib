@@ -4,8 +4,7 @@ import scryptlib.utils
 import scryptlib.contract
 from scryptlib.types import SigHashPreimage, Int, Bool
 
-import bitcoinx
-from bitcoinx import SigHash, TxOutput, Script
+from bitcoinx import SigHash, TxOutput
 
 
 COUNTER_INITIAL_VAL = 0

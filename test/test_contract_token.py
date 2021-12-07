@@ -2,10 +2,9 @@ import pytest
 
 import scryptlib.utils
 import scryptlib.contract
-from scryptlib.types import Int, PubKey, Sig, SigHashPreimage
+from scryptlib.types import PubKey, Sig, SigHashPreimage
 
-import bitcoinx
-from bitcoinx import PrivateKey, TxOutput, SigHash, pack_byte, Script
+from bitcoinx import PrivateKey, TxOutput, SigHash, pack_byte
 
 
 key_priv_0 = PrivateKey.from_arbitrary_bytes(b'test123')

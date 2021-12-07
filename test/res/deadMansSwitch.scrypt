@@ -1,0 +1,105 @@
+import "util.scrypt";
+
+/**
+ * Dead man's switch / last will contract.
+ */
+
+ contract DeadMansSwitch {
+
+    @state
+    PubKey pubKeyRefresh;
+
+    @state
+    PubKey pubKeyCancel;
+
+    @state
+    PubKey pubKeyInheritor;
+
+    @state
+    int refreshTimestamp;
+
+    @state
+    int inheritTimestampOffset;
+
+    @state
+    int inheritanceSats;
+
+    public function refresh(SigHashPreimage txPreimage, int currentTime, Sig sig) {
+        require(Tx.checkPreimage(txPreimage));
+
+        require(checkSig(sig, pubKeyRefresh));
+        
+        this.refreshTimestamp = refreshTimestamp
+
+        bytes outputScript = this.getStateScript();
+        bytes output = Util.buildOutput(outputScript, inheritanceSats);
+        require(hash256(output) == Util.hashOutputs(txPreimage));
+    }
+
+    public function cancel(Sig sig) {
+
+    }
+
+    public function inherit(SigHashPreimage txPreimage, Sig sig) {
+        require(Tx.checkPreimage(txPreimage));
+        
+        require(checkSig(sig, pubKeyInheritor));
+
+        // This function call should only be spendable after the the last refresh + offset has passed.
+        require(Util.nLocktime(txPreimage) >= this.refreshTimestamp + this.inheritTimestampOffset);
+        
+        // Also check nSequence
+    }
+
+ }
+
+ // TODO: Do one without nlocktime and the owner as the time oracle
+import "util.scrypt";
+
+/**
+ * Dead man's switch / last will contract.
+ */
+
+ contract DeadMansSwitch {
+
+    @state
+    PubKey pubKeyRefresh;
+
+    @state
+    PubKey pubKeyCancel;
+
+    @state
+    PubKey pubKeyInheritor;
+
+    /**
+     * Unix timestamp past which the inheritor can withdraw the inherited funds.
+     * This value gets updated each time the contract is refreshed by the owner.
+     */
+    @state
+    int inheritTimestamp;
+
+    @state
+    int inheritanceSats;
+
+    public function refresh(SigHashPreimage txPreimage, int newInheritTimestamp, Sig sig) {
+        require(Tx.checkPreimage(txPreimage));
+
+        require(checkSig(sig, pubKeyRefresh));
+
+        this.inheritNLocktime = newInheritTimestamp
+        
+        // Make sure next iteration includes updated nLocktime.
+        require(newNLocktime == Util.nLocktime(txPreimage));
+
+
+    }
+
+    public function cancel(Sig sig) {
+
+    }
+
+    public function inherit(SigHashPreimage txPreimage, Sig sig) {
+
+    }
+
+ }

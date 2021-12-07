@@ -44,10 +44,10 @@ The SDK is used to convert script templates, produced by the sCrypt compiler, to
 We can compile an sCrypt conract source file like so:
 
 ```python
-import scryptlib.utils
+import scryptlib
 
 contract = './test/res/arraydemo.scrypt'
-compiler_result = scryptlib.utils.compile_contract(contract)
+compiler_result = scryptlib.compile_contract(contract)
 ```
 
 This will leave us with a `CompilerResult` object, that contains all of the data, returned by the compiler.
@@ -71,7 +71,7 @@ contract_source = '''
     }
 '''
 
-compiler_result = scryptlib.utils.compile_contract(contract_source, from_string=True)
+compiler_result = scryptlib.compile_contract(contract_source, from_string=True)
 ```
 
 The resulting **contract description file** will be written to `./out` by default. That may also be changed with the `out_dir` parameter.
@@ -84,18 +84,17 @@ We can evaluate any public function of the contract locally on our machine, befo
 First we need to create a class representation of the contract and instantiate it:
 
 ```python
-import scryptlib.utils
-import scryptlib.contract
+import scryptlib
 from scryptlib.types import Int
 
 EQUAL_VAL = 2021
 
 contract = './test/res/equals.scrypt'
 
-compiler_result = scryptlib.utils.compile_contract(contract)
+compiler_result = scryptlib.compile_contract(contract)
 desc = compiler_result.to_desc()
 
-Equals = scryptlib.contract.build_contract_class(desc)
+Equals = scryptlib.build_contract_class(desc)
 contract_obj = Equals(Int(EQUAL_VAL))
 ```
 
@@ -111,15 +110,13 @@ assert verify_result == True
 From the example see, that we called the contracts public function, named `equals`. The actual call to `equals()` in Python reutrns an instance of `scryptlib.abi.FunctionCall`. That object in turn has a method, named `verify`, with which we can run the function calls unlocking script against the contracts locking script.
 `verify` can internaly create an input evaluation context for simple contracts, but once we start using more advanced constructs, like signatures, we can pass an instance of `bitconx.TxInputContext`, using the `tx_input_context` parameter.
 
-sctyptlib-python leverages the [bitcoinx](https://github.com/kyuupichan/bitcoinX) library to deal with Bitcoin primitives.
+py-scryptlib leverages the [bitcoinx](https://github.com/kyuupichan/bitcoinX) library to deal with Bitcoin primitives.
 
 The following is an example of a local evaluation of a P2PKH contract:
 
 ```python
 import pytest
-
-import scryptlib.utils
-import scryptlib.contract
+import scryptlib
 from scryptlib.types import Sig, PubKey, Ripemd160
 
 import bitcoinx
@@ -132,13 +129,13 @@ pubkey_hash = key_pub.hash160()
 
 contract = './test/res/p2pkh.scrypt'
 
-compiler_result = scryptlib.utils.compile_contract(contract)
+compiler_result = scryptlib.compile_contract(contract)
 desc = compiler_result.to_desc()
 
-P2PKH = scryptlib.contract.build_contract_class(desc)
+P2PKH = scryptlib.build_contract_class(desc)
 p2pkh_obj = P2PKH(Ripemd160(pubkey_hash))
 
-context = scryptlib.utils.create_dummy_input_context()
+context = scryptlib.create_dummy_input_context()
 
 sighash_flag = SigHash(SigHash.ALL | SigHash.FORKID)
 input_idx = 0
@@ -151,6 +148,8 @@ sig = sig + pack_byte(sighash_flag)
 verify_result = p2pkh_obj.unlock(Sig(sig), PubKey(key_pub)).verify(context)
 assert verify_result == True
 ```
+
+You can find many other examples under `test/test_contract_*`.
 
 ## Testing
 
