@@ -524,6 +524,7 @@ BASIC_SCRYPT_TYPES = {
         'int': Int,
         'bytes': Bytes,
         'PubKey': PubKey,
+        'PrivKey': PrivKey,
         'Sig': Sig,
         'Ripemd160': Ripemd160,
         'Sha1': Sha1,

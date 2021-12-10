@@ -529,15 +529,15 @@ class CompilerWrapper:
         else:
             resolved_type = utils.resolve_type(type_str, aliases)
 
-        #if utils.is_struct_type(resolved_type):
-        #    return utils.get_struct_name_by_type(resolved_type)
-        #elif utils.is_array_type(resolved_type):
-        #    elem_type_name, array_sizes = utils.factorize_array_type_str(resolved_type)
+        if utils.is_struct_type(resolved_type):
+            return utils.get_struct_name_by_type(resolved_type)
+        elif utils.is_array_type(resolved_type):
+            elem_type_name, array_sizes = utils.factorize_array_type_str(resolved_type)
 
-        #    if utils.is_struct_type(elem_type_name):
-        #        elem_type_name = utils.get_struct_name_by_type(resolved_type)
+            if utils.is_struct_type(elem_type_name):
+                elem_type_name = utils.get_struct_name_by_type(resolved_type)
 
-        #    return utils.to_literal_array_type(elem_type_name, array_sizes)
+            return utils.to_literal_array_type(elem_type_name, array_sizes)
 
         return resolved_type
 
