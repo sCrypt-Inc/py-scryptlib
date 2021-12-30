@@ -133,3 +133,6 @@ dmypy.json
 # sCrypt
 compiler/
 compiler_dist/
+
+# PyCharm
+.idea/

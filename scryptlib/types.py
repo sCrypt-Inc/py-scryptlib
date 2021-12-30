@@ -1,7 +1,8 @@
 import bitcoinx
 from bitcoinx import Script, base58_decode_check
 
-import scryptlib.utils
+import scryptlib.utils as utils
+import scryptlib.serializer as serializer
 
 
 # TODO: Add bytes propery and make scryptlib use bytes instead of hex strings internally.
@@ -92,7 +93,7 @@ class Bytes(ScryptType):
 
     @property
     def hex(self):
-        return (Script() << self.value).to_hex()
+        return utils.get_push_item(self.value).hex()
 
 
 class PrivKey(ScryptType):
@@ -254,12 +255,12 @@ class SigHashPreimage(ScryptType):
 
     @classmethod
     def from_tx(cls, tx, input_index, utxo_value, script_code, sighash):
-        preimage_bytes = scryptlib.scryptlib.utils.get_preimage(tx, input_index, script_code, sighash)
+        preimage_bytes = utils.get_preimage(tx, input_index, script_code, sighash)
         return cls(preimage_bytes)
 
     @classmethod
     def from_input_context(cls, context, sighash):
-        preimage_bytes = scryptlib.scryptlib.utils.get_preimage_from_input_context(context, sighash)
+        preimage_bytes = utils.get_preimage_from_input_context(context, sighash)
         return cls(preimage_bytes)
 
     @property
@@ -301,7 +302,7 @@ class Struct(ScryptType):
         Order members so they match the order in the AST. Also set self.type_str based on the name in the AST.
         (Since Python 3.6 dictionaries maintain insert ordering)
         '''
-        scryptlib.utils.check_struct(self.struct_ast, self, self._type_resolver)
+        utils.check_struct(self.struct_ast, self, self._type_resolver)
         new_val = dict()
         for param in self.struct_ast['params']:
             name = param['name']
@@ -344,7 +345,7 @@ class Struct(ScryptType):
         self.bind()
 
         res_buff = []
-        flat_struct = scryptlib.utils.flatten_struct(self, '')
+        flat_struct = utils.flatten_struct(self, '')
         for elem in flat_struct:
             res_buff.append(elem['value'].asm)
 
@@ -355,13 +356,14 @@ class Struct(ScryptType):
         self.bind()
 
         res_buff = []
-        flat_struct = scryptlib.utils.flatten_struct(self, '')
+        flat_struct = utils.flatten_struct(self, '')
         for elem in flat_struct:
             res_buff.append(elem['value'].hex)
 
         return Script.from_hex(''.join(res_buff)).to_hex()
 
 
+# TODO: HashedMap and HashedSet could only store hashes instead of whole ScryptType objects.
 class HashedMap(ScryptType):
 
     type_str = 'HashedMap'
@@ -377,12 +379,12 @@ class HashedMap(ScryptType):
         super().__init__(data)
 
     def key_index(self, key):
-        key = scryptlib.utils.primitives_to_scrypt_types(key)
-        key_hash = scryptlib.utils.flatten_sha256(key)
+        key = utils.primitives_to_scrypt_types(key)
+        key_hash = utils.flatten_sha256(key)
         assert type(key) == self.type_key
         self._sort()
         for i, key_other in enumerate(self.value.keys()):
-            key_hash_other = scryptlib.utils.flatten_sha256(key_other)
+            key_hash_other = utils.flatten_sha256(key_other)
             if key_hash == key_hash_other:
                 return i
         return None
@@ -392,7 +394,7 @@ class HashedMap(ScryptType):
         new_dict = dict()
         keys_and_keyhashes = []
         for key in self.value.keys():
-            key_hash = scryptlib.utils.flatten_sha256(key)
+            key_hash = utils.flatten_sha256(key)
             keys_and_keyhashes.append((key_hash, key))
 
         keys_and_keyhashes.sort(key=lambda x:x[0][::-1])
@@ -402,8 +404,8 @@ class HashedMap(ScryptType):
         self.value = new_dict
 
     def set(self, key, val):
-        key = scryptlib.utils.primitives_to_scrypt_types(key)
-        val = scryptlib.utils.primitives_to_scrypt_types(val)
+        key = utils.primitives_to_scrypt_types(key)
+        val = utils.primitives_to_scrypt_types(val)
         assert type(key) == self.type_key
         assert type(val) == self.type_val
 
@@ -411,19 +413,19 @@ class HashedMap(ScryptType):
         #       value of existing entry.
         #       This currently doesn't work because it checks if it's the same object itself,
         #       and not only the value.
-        key_hash = scryptlib.utils.flatten_sha256(key)
+        key_hash = utils.flatten_sha256(key)
         for key_other in self.value.keys():
-            key_hash_other = scryptlib.utils.flatten_sha256(key_other)
+            key_hash_other = utils.flatten_sha256(key_other)
             if key_hash == key_hash_other:
                 self.value[key_other] = val
                 return
         self.value[key] = val
 
     def delete(self, key):
-        key_hash = scryptlib.utils.flatten_sha256(key)
+        key_hash = utils.flatten_sha256(key)
         to_del = None
         for key_other in self.value.keys():
-            key_hash_other = scryptlib.utils.flatten_sha256(key_other)
+            key_hash_other = utils.flatten_sha256(key_other)
             if key_hash == key_hash_other:
                 to_del = key_other
                 break
@@ -441,8 +443,8 @@ class HashedMap(ScryptType):
         res_buff = []
         self._sort()
         for key, val in self.value.items():
-            res_buff += scryptlib.utils.flatten_sha256(key).hex()
-            res_buff += scryptlib.utils.flatten_sha256(val).hex()
+            res_buff += utils.flatten_sha256(key).hex()
+            res_buff += utils.flatten_sha256(val).hex()
         #return (Script() << ''.join(res_buff)).to_hex()
         return ''.join(res_buff)
 
@@ -460,31 +462,31 @@ class HashedSet(ScryptType):
         super().__init__(data)
 
     def key_index(self, key):
-        key = scryptlib.utils.primitives_to_scrypt_types(key)
+        key = utils.primitives_to_scrypt_types(key)
         assert type(key) == self.type_key
         for key_other in enumerate(self.keys_sorted()):
             if key.hex == key_other.hex:
                 return i
-        return None
+        return KeyError(key.hex)
 
     def add(self, key):
-        key = scryptlib.utils.primitives_to_scrypt_types(key)
+        key = utils.primitives_to_scrypt_types(key)
         assert type(key) == self.type_val
 
         # TODO: See set() of HashedMap.
-        key_hash = scryptlib.utils.flatten_sha256(key)
+        key_hash = utils.flatten_sha256(key)
         for key_other in self.value:
-            key_hash_other = scryptlib.utils.flatten_sha256(key_other)
+            key_hash_other = utils.flatten_sha256(key_other)
             if key_hash == key_hash_other:
                 self.value.add(key_other)
                 return
         self.value.add(key)
 
     def delete(self, key):
-        key_hash = scryptlib.utils.flatten_sha256(key)
+        key_hash = utils.flatten_sha256(key)
         to_del = None
         for key_other in self.value:
-            key_hash_other = scryptlib.utils.flatten_sha256(key_other)
+            key_hash_other = utils.flatten_sha256(key_other)
             if key_hash == key_hash_other:
                 to_del = key_other
                 break
@@ -498,7 +500,7 @@ class HashedSet(ScryptType):
         res = []
         keys_and_keyhashes = []
         for key in self.value:
-            key_hash = scryptlib.utils.flatten_sha256(key)
+            key_hash = utils.flatten_sha256(key)
             keys_and_keyhashes.append((key_hash, key))
 
         keys_and_keyhashes.sort(key=lambda x:x[0][::-1])
@@ -515,7 +517,7 @@ class HashedSet(ScryptType):
     def hex(self):
         res_buff = []
         for key in self.keys_sorted():
-            res_buff += scryptlib.utils.flatten_sha256(key).hex()
+            res_buff += utils.flatten_sha256(key).hex()
         return ''.join(res_buff)
         
 

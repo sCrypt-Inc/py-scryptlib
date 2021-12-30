@@ -1,8 +1,11 @@
-import scryptlib.utils
-from scryptlib.types import *
-
 from bitcoinx import pack_byte, le_bytes_to_int
-from bitcoinx.script import *
+from bitcoinx.script import (
+        OP_TRUE, OP_FALSE, OP_RETURN
+        )
+
+import scryptlib.utils as utils
+import scryptlib.types as types
+
 
 
 # TODO: What to do about negative integers?
@@ -29,29 +32,29 @@ def serialize_bool(val):
 
 
 def serialize_int(val):
-    return scryptlib.utils.get_push_int(val)
+    return utils.get_push_int(val)
 
 
 def serialize_string(val):
     if val == '':
         res = pack_byte(0)
     res = str.encode(val, 'utf-8')
-    return scryptlib.utils.get_push_item(res)
+    return utils.get_push_item(res)
 
 
 def serialize_hex(val):
     res = bytes.fromhex(val)
-    return scryptlib.utils.get_push_item(res)
+    return utils.get_push_item(res)
 
 
 def serialize_bytes(val):
-    return scryptlib.utils.get_push_item(val)
+    return utils.get_push_item(val)
 
 
 def serialize_scrypt_type(val):
-    if isinstance(val, Bool):
+    if isinstance(val, types.Bool):
         return serialize_bool(val.value)
-    elif isinstance(val, Int):
+    elif isinstance(val, types.Int):
         return serialize_int(val.value)
     return bytes.fromhex(val.hex)
 
@@ -85,7 +88,7 @@ def serialize(val, len_prefix=True):
         res = serialize_string(val)
     elif isinstance(val, bytes):
         res = serialize_bytes(val)
-    elif isinstance(val, ScryptType):
+    elif isinstance(val, types.ScryptType):
         res = serialize_scrypt_type(val)
     elif isinstance(val, list):
         res = serialize_array(val)
@@ -113,7 +116,7 @@ def drop_len_prefix(data):
         # OP_PUSHDATA2
         return data[3:]
     elif first_byte == b'\x4e':
-        # OP_PUSHDATA2
+        # OP_PUSHDATA4
         return data[5:]
     raise Exception('Invalid first byte "{}".'.format(first_byte))
 
@@ -130,13 +133,13 @@ def serialize_state(state, length_label_size=STATE_LEN_2BYTES, schema=None):
 
     state_data = b''.join(buff)
     state_len = encode_state_len(len(state_data), length_label_size)
-    return state_data + scryptlib.utils.get_push_item(state_len)
+    return state_data + utils.get_push_item(state_len)
 
 
 def deserialize_state(data, schema, length_label_size=STATE_LEN_2BYTES):
     res = dict()
 
-    if isinstance(data, Script):
+    if isinstance(data, types.Script):
         # If a Script object is passed, try to find OP_RETURN and deserialize only the part after it.
         # If no OP_RETURN is found, try to deserialize the whole script.
         data_items = []
@@ -153,7 +156,7 @@ def deserialize_state(data, schema, length_label_size=STATE_LEN_2BYTES):
         else:
             data_items = iter(data_items)
     else:
-        data_items = Script(data).ops_and_items()
+        data_items = types.Script(data).ops_and_items()
 
 
     # Since Python 3.6 dictionaries maintain order.
@@ -170,7 +173,7 @@ def deserialize_state(data, schema, length_label_size=STATE_LEN_2BYTES):
         elif isinstance(val, int):
             res[key] = le_bytes_to_int(item)
         elif isinstance(val, str):
-            res[key] = str.decode(item, 'utf-8') 
+            res[key] = item.decode('utf-8') 
         elif isinstance(val, bytes):
             res[key] = val
         else:

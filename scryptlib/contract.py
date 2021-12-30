@@ -3,10 +3,10 @@ from functools import partialmethod
 from bitcoinx import Script, OP_RETURN
 
 import scryptlib.utils as utils
-from scryptlib.compiler_wrapper import CompilerResult
-from scryptlib.abi import ABICoder
-from scryptlib.types import BASIC_SCRYPT_TYPES, Struct
-from scryptlib.serializer import serialize_state
+import scryptlib.compiler_wrapper as compiler_wrapper
+import scryptlib.abi as abi
+import scryptlib.types as types
+import scryptlib.serializer as serializer
 
 
 class ContractBase:
@@ -17,7 +17,7 @@ class ContractBase:
         elif isinstance(state, str):
             self._manual_data_part = Script(bytes.fromhex(state))
         elif isinstance(state, dict):
-            self._manual_data_part = Script(serialize_state(state))
+            self._manual_data_part = Script(serializer.serialize_state(state))
         else:
             raise NotImplementedError('Invalid object type for contract data part "{}".'.format(state.__class__))
 
@@ -64,7 +64,7 @@ class ContractBase:
 
 
 def build_contract_class(desc):
-    if isinstance(desc, CompilerResult):
+    if isinstance(desc, compiler_wrapper.CompilerResult):
         desc = desc.to_desc()
 
     def constructor(self, *args, **kwargs):
@@ -94,7 +94,7 @@ def build_contract_class(desc):
     contract_class_attribs['abi'] = desc['abi']
     contract_class_attribs['asm'] = desc['asm']
     contract_class_attribs['hex'] = desc['hex']
-    contract_class_attribs['abi_coder'] = ABICoder(desc['abi'], desc.get('alias', []))
+    contract_class_attribs['abi_coder'] = abi.ABICoder(desc['abi'], desc.get('alias', []))
     contract_class_attribs['file'] = desc['file']
     contract_class_attribs['structs'] = desc['structs']
     for entity in desc['abi']:
@@ -141,7 +141,7 @@ def build_struct_classes(desc):
         type_class_attribs = dict()
         type_class_attribs['__init__'] = constructor
         type_class_attribs['struct_ast'] = struct
-        struct_classes[name] = type(name, (Struct,), type_class_attribs)
+        struct_classes[name] = type(name, (types.Struct,), type_class_attribs)
     return struct_classes
 
 
@@ -173,13 +173,13 @@ def build_type_classes(desc):
             alias_classes[alias_name] = type(alias_name, (struct_classes[struct_name],), alias_class_atribs)
         elif utils.is_array_type(final_type):
             elem_type_name, _ = utils.factorize_array_type_str(final_type)
-            if elem_type_name in BASIC_SCRYPT_TYPES:
+            if elem_type_name in types.BASIC_SCRYPT_TYPES:
                 alias_classes[alias_name] = list()
             elif utils.is_struct_type(elem_type_name):
                 struct_name = utils.get_struct_name_by_type(elem_type_name)
                 alias_classes[alias_name] = list()
         else:
-            if final_type in BASIC_SCRYPT_TYPES:
+            if final_type in types.BASIC_SCRYPT_TYPES:
                 def constructor(self, struct_obj):
                     # TODO: Solve recursion problem with calling super constructor.
                     #       For now value is set manualy.
@@ -191,7 +191,7 @@ def build_type_classes(desc):
                     self.bind()
                 alias_class_atribs = dict()
                 alias_class_atribs['__init__'] = constructor
-                alias_classes[alias_name] = type(alias_name, (BASIC_SCRYPT_TYPES[final_type],), alias_class_atribs)
+                alias_classes[alias_name] = type(alias_name, (types.BASIC_SCRYPT_TYPES[final_type],), alias_class_atribs)
             else:
                 raise Exception('Could not resolve alias "{}" for type "{}".'.format(alias_name, alias['type']))
 
@@ -218,7 +218,7 @@ def build_type_resolver(aliases):
             for size in sizes:
                 array_type_buff.append('[{}]'.format(size))
             array_type = ''.join(array_type_buff)
-        if alias in BASIC_SCRYPT_TYPES:
+        if alias in types.BASIC_SCRYPT_TYPES:
             return '{}{}'.format(alias, array_type)
         if alias in resolved_types:
             return '{}{}'.format(resolved_types[alias], array_type)

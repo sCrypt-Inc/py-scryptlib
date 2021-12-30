@@ -3,6 +3,30 @@ import pytest
 from scryptlib.types import *
 
 
+def test_type_bytes():
+    b = Bytes('01')
+    assert(b.hex == '0101')
+
+    b = Bytes(b'\x01')
+    assert(b.hex == '0101')
+
+    # OP_PUSHDATA1
+    b = Bytes('ff' * 100)
+    assert(b.hex == '4c64' + 'ff' * 100)
+    b = Bytes('ff' * 255)
+    assert(b.hex == '4cff' + 'ff' * 255)
+
+    # OP_PUSHDATA2
+    b = Bytes('ff' * 256)
+    assert(b.hex == '4d0001' + 'ff' * 256)
+    b = Bytes('ff' * 65535)
+    assert(b.hex == '4dffff' + 'ff' * 65535)
+
+    # OP_PUSHDATA4
+    b = Bytes('ff' * 65536)
+    assert(b.hex == '4e00000100' + 'ff' * 65536)
+
+
 def test_type_hashedmap():
     hm = HashedMap(Int, Int)
     hm.set(Int(3), Int(1))

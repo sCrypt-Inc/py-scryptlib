@@ -1,8 +1,10 @@
 __version__ = '0.4.1'
 
-from scryptlib.utils import *
-from scryptlib.types import *
-from scryptlib.compiler_wrapper import *
-from scryptlib.contract import *
-from scryptlib.abi import *
-from scryptlib.serializer import *
+
+from .utils import *
+from .types import *
+from .compiler_wrapper import *
+from .contract import *
+from .abi import *
+from .serializer import *
+

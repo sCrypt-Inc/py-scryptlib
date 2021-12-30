@@ -38,6 +38,6 @@ setup(long_description=long_description,
 
       # Dependencies to run all tests.
       extras_require = {
-        'testing': ['rabin', 'ecdsa']
+        'testing': ['pytest', 'rabin', 'ecdsa']
       }
      )

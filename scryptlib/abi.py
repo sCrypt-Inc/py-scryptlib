@@ -3,9 +3,9 @@ import re
 from bitcoinx import TxInputContext, InterpreterLimits, MinerPolicy, Script
 
 import scryptlib.utils as utils
-from scryptlib.compiler_wrapper import ABIEntityType
-from scryptlib.types import Struct, Int, Bool, Bytes
-from scryptlib.serializer import serialize
+import scryptlib.compiler_wrapper as compiler_wrapper
+import scryptlib.types as types
+import scryptlib.serializer as serializer
 
 
 # TODO: Make type checking simpler.
@@ -127,7 +127,7 @@ class ABICoder:
                     raise Exception('Statefull variable "{}" should be of type "{}". ' \
                             'Got object of type "{}" instead.'.format(param_name, param['type'], val.type_str))
 
-            state_buff.append(serialize(val).hex())
+            state_buff.append(serializer.serialize(val).hex())
 
         # State length and state version.
         state_len = 0
@@ -149,7 +149,7 @@ class ABICoder:
                 hex_script = self.encode_params(args, entity['params'])
                 if len(self.abi) > 2 and 'index' in entity:
                     pub_func_index = entity['index']
-                    hex_script += '{}'.format(Int(pub_func_index).hex) # TODO
+                    hex_script += '{}'.format(types.Int(pub_func_index).hex) # TODO
                 unlocking_script = Script.from_hex(hex_script) 
                 return FunctionCall(name, args, contract, unlocking_script=unlocking_script)
 
@@ -169,7 +169,7 @@ class ABICoder:
                 raise Exception('Expected parameter "{}" as "{}", but got "{}".'.format(param_entity['name'],
                                     resolved_type, scrypt_type))
         if utils.is_struct_type(resolved_type):
-            if isinstance(arg, Struct):
+            if isinstance(arg, types.Struct):
                 if resolved_type != arg.final_type:
                     raise Exception('Expected struct of type "{}", but got struct of type "{}".'.format(
                                         param_entity['name'], resolved_type, arg.final_type))
@@ -184,11 +184,11 @@ class ABICoder:
                                 scrypt_type))
 
         if isinstance(arg, bool):
-            arg = Bool(arg)
+            arg = types.Bool(arg)
         elif isinstance(arg, int):
-            arg = Int(arg)
+            arg = types.Int(arg)
         elif isinstance(arg, bytes):
-            arg = Bytes(arg)
+            arg = types.Bytes(arg)
 
         return arg.hex
 
@@ -215,7 +215,7 @@ class ABICoder:
     def abi_constructor(self):
         constructor_abi = None
         for entity in self.abi:
-            if entity['type'] == ABIEntityType.CONSTRUCTOR.value:
+            if entity['type'] == compiler_wrapper.ABIEntityType.CONSTRUCTOR.value:
                 constructor_abi = entity
                 break
         return constructor_abi

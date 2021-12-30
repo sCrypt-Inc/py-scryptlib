@@ -5,7 +5,7 @@ import hashlib
 from pathlib import Path
 from enum import Enum
 
-from . import utils
+import scryptlib.utils as utils
 
 
 # TODO: Decide whether to keep stuff like ABI entites as dicts, or create a class for them.
