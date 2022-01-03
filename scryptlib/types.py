@@ -101,7 +101,11 @@ class PrivKey(ScryptType):
     type_str = 'PrivKey'
 
     def __init__(self, value):
-        if isinstance(value, bytes):
+        if isinstance(value, str):
+            value = bitcoinx.PrivateKey.from_hex(value)
+        elif isinstance(value, int):
+            value = bitcoinx.PrivateKey.from_int(value)
+        elif isinstance(value, bytes):
             value = bitcoinx.PrivateKey(value)
         assert isinstance(value, bitcoinx.PrivateKey)
         super().__init__(value)
@@ -112,7 +116,7 @@ class PrivKey(ScryptType):
 
     @property
     def hex(self):
-        return (Script() << self.value.to_bytes()).to_hex()
+        return (Script() << self.value.to_bytes()[::-1]).to_hex()
 
 
 class PubKey(ScryptType):

@@ -27,6 +27,18 @@ def test_type_bytes():
     assert(b.hex == '4e00000100' + 'ff' * 65536)
 
 
+def test_type_privkey():
+    x = PrivKey(bytes.fromhex('7ED697BCE5AEF3F7B09CBD6BBB8EBACF0C53D8B80DD90BACF8644C11648E8784'))
+    assert(x.hex == '2084878e64114c64f8ac0bd90db8d8530ccfba8ebb6bbd9cb0f7f3aee5bc97d67e')
+
+    x = PrivKey('7ED697BCE5AEF3F7B09CBD6BBB8EBACF0C53D8B80DD90BACF8644C11648E8784')
+    assert(x.hex == '2084878e64114c64f8ac0bd90db8d8530ccfba8ebb6bbd9cb0f7f3aee5bc97d67e')
+     
+    x = PrivKey(70024952860251874614749626492917994704208775384514195732065700789540272030212)
+    assert(x.hex == '2004421d3fb78c05aba0d68817fce03e2b0cf7d058f74705a7ec76288202b8d09a')
+
+
+
 def test_type_hashedmap():
     hm = HashedMap(Int, Int)
     hm.set(Int(3), Int(1))
