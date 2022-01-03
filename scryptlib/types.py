@@ -124,8 +124,15 @@ class PubKey(ScryptType):
     type_str = 'PubKey'
 
     def __init__(self, value):
+        self._compressed = True
+        if isinstance(value, str):
+            value = bytes.fromhex(value)
+
         if isinstance(value, bytes):
-            value = bitcoinx.PublicKey(value)
+            if len(value) == 65:
+                self._compressed = False
+            value = bitcoinx.PublicKey.from_bytes(value)
+
         assert isinstance(value, bitcoinx.PublicKey)
         super().__init__(value)
 
@@ -135,7 +142,7 @@ class PubKey(ScryptType):
 
     @property
     def hex(self):
-        return (Script() << self.value.to_bytes()).to_hex()
+        return (Script() << self.value.to_bytes(compressed=self._compressed)).to_hex()
 
 
 class Sig(ScryptType):
