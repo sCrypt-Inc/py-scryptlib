@@ -27,16 +27,28 @@ def test_type_bytes():
     assert(b.hex == '4e00000100' + 'ff' * 65536)
 
 
+def test_type_int():
+    x = Int(73219837192873198232871937891273981279837198793818)
+    assert(x.hex == '155abc0013a5e275d529dc04d7e2320ae0a60d5b1932')
+
+    x = Int(-73219837192873198232871937891273981279837198793818)
+    assert(x.hex == '155abc0013a5e275d529dc04d7e2320ae0a60d5b19b2')
+
+
 def test_type_privkey():
+    # Positive
     x = PrivKey(bytes.fromhex('7ED697BCE5AEF3F7B09CBD6BBB8EBACF0C53D8B80DD90BACF8644C11648E8784'))
     assert(x.hex == '2084878e64114c64f8ac0bd90db8d8530ccfba8ebb6bbd9cb0f7f3aee5bc97d67e')
 
     x = PrivKey('7ED697BCE5AEF3F7B09CBD6BBB8EBACF0C53D8B80DD90BACF8644C11648E8784')
     assert(x.hex == '2084878e64114c64f8ac0bd90db8d8530ccfba8ebb6bbd9cb0f7f3aee5bc97d67e')
      
+    # Negative
     x = PrivKey(70024952860251874614749626492917994704208775384514195732065700789540272030212)
-    assert(x.hex == '2004421d3fb78c05aba0d68817fce03e2b0cf7d058f74705a7ec76288202b8d09a')
+    assert(x.hex == '2104421d3fb78c05aba0d68817fce03e2b0cf7d058f74705a7ec76288202b8d09a00')
 
+    x = PrivKey(0xc34039e780c90ec8517a556b379954076b04c792035407802f3e65e61c1cd3c5)
+    assert(x.hex == '21c5d31c1ce6653e2f8007540392c7046b075499376b557a51c80ec980e73940c300')
 
 
 def test_type_hashedmap():
