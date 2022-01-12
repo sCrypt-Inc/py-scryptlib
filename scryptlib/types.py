@@ -116,7 +116,11 @@ class PrivKey(ScryptType):
 
     @property
     def hex(self):
-        return (Script() << self.value.to_bytes()[::-1]).to_hex()
+        val_bytes = self.value.to_bytes()[::-1]
+        is_neg = (val_bytes[-1] & 128) > 0
+        if is_neg:
+            val_bytes += b'\x00'
+        return (Script() << val_bytes).to_hex()
 
 
 class PubKey(ScryptType):
@@ -124,15 +128,10 @@ class PubKey(ScryptType):
     type_str = 'PubKey'
 
     def __init__(self, value):
-        self._compressed = True
         if isinstance(value, str):
-            value = bytes.fromhex(value)
-
-        if isinstance(value, bytes):
-            if len(value) == 65:
-                self._compressed = False
+            value = bitcoinx.PublicKey.from_hex(value)
+        elif isinstance(value, bytes):
             value = bitcoinx.PublicKey.from_bytes(value)
-
         assert isinstance(value, bitcoinx.PublicKey)
         super().__init__(value)
 
@@ -142,7 +141,42 @@ class PubKey(ScryptType):
 
     @property
     def hex(self):
-        return (Script() << self.value.to_bytes(compressed=self._compressed)).to_hex()
+        return (Script() << self.value.to_bytes()).to_hex()
+
+    def gradient(self, pubkey):
+        """
+        Get gradient between this and the passed public keys coordinates.
+        """
+        P1x, P1y = self.value.to_point()
+        P2x, P2y = pubkey.value.to_point()
+        p = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffefffffc2f
+
+        if P1x == P2x and P1y == P2y:
+            a = 0
+            lambda_numerator = 3 * (P1x**2) + a
+            lambda_denominator = 2 * P1y
+            return PubKey._mod_divide(lambda_numerator, lambda_denominator, p)
+        else:
+            lambda_numerator = P2y - P1y
+            lambda_denominator = P2x - P1x
+            return PubKey._mod_divide(lambda_numerator, lambda_denominator, p)
+
+    @staticmethod
+    def _mod_inverse(b, m):
+        g = math.gcd(b, m)
+        if (g != 1):
+            # Inverse doesn't exist.
+            return -1
+        else:
+            return pow(b, m - 2, m)
+
+    @staticmethod
+    def _mod_divide(a, b, m):
+        a = a % m
+        inv = mod_inverse(b, m)
+        if(inv == -1):
+            raise Exception("Division not defined")
+        return (inv * a) % m
 
 
 class Sig(ScryptType):
