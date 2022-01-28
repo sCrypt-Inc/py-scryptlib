@@ -18,7 +18,7 @@ This will download the latest version of the compiler.
 
 You can also download a specific version of the compiler using the `-v` flag:
 ```sh
-curl -Ls https://scrypt.io/setup | sh -s -- -v 1.3.2
+curl -Ls https://scrypt.io/setup | sh -s -- -v 1.6.1
 ```
 
 ### SDK
