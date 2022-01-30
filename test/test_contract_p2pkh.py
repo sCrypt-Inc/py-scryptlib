@@ -2,7 +2,7 @@ import pytest
 
 import scryptlib.utils
 import scryptlib.contract
-from scryptlib.types import Sig, PubKey, Ripemd160
+from scryptlib.types import Sig, PubKey, PubKeyHash
 
 import bitcoinx
 from bitcoinx import SigHash, PrivateKey, pack_byte
@@ -21,7 +21,7 @@ compiler_result = scryptlib.utils.compile_contract(contract)
 desc = compiler_result.to_desc()
 
 P2PKH = scryptlib.contract.build_contract_class(desc)
-p2pkh_obj = P2PKH(Ripemd160(pubkey_hash))
+p2pkh_obj = P2PKH(PubKeyHash(pubkey_hash))
 
 context = scryptlib.utils.create_dummy_input_context()
 
@@ -38,7 +38,7 @@ def test_verify_correct_key():
     assert verify_result == True
 
 
-def test_verify_correct():
+def test_verify_wrong():
     sig = wrong_key_priv.sign(sighash, hasher=None)
     sig = sig + pack_byte(sighash_flag)
     with pytest.raises(bitcoinx.VerifyFailed):

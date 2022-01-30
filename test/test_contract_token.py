@@ -4,6 +4,7 @@ import scryptlib.utils
 import scryptlib.contract
 from scryptlib.types import PubKey, Sig, SigHashPreimage
 
+import bitcoinx
 from bitcoinx import PrivateKey, TxOutput, SigHash, pack_byte
 
 
@@ -71,6 +72,8 @@ def test_verify_correct():
 
 
 def test_verify_wrong_val():
+    token.first_call = True
+
     verify_result = token.transfer(PubKey(key_pub_0), 
             Sig(sig),
             PubKey(key_pub_1),
@@ -81,6 +84,8 @@ def test_verify_wrong_val():
 
 
 def test_verify_wrong_val_2():
+    token.first_call = True
+
     verify_result = token.transfer(PubKey(key_pub_0), 
             Sig(sig),
             PubKey(key_pub_1),
@@ -88,3 +93,14 @@ def test_verify_wrong_val_2():
             SigHashPreimage(preimage),
             222222).verify(context)
     assert verify_result == False
+
+def test_verify_not_first_call():
+    token.first_call = False
+
+    with pytest.raises(bitcoinx.errors.NullFailError):
+        token.transfer(PubKey(key_pub_0), 
+            Sig(sig),
+            PubKey(key_pub_1),
+            40,
+            SigHashPreimage(preimage),
+            222222).verify(context)

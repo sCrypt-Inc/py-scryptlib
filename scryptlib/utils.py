@@ -386,6 +386,7 @@ def create_dummy_input_context():
     return TxInputContext(curr_tx, input_idx, utxo, is_utxo_after_genesis=True)
 
 
+# TODO: Move to scrypt type
 def get_preimage(tx, input_index, utxo_value, utxo_script, sighash_flag=None):
     if not sighash_flag:
         sighash_flag = SigHash(SigHash.ALL | SigHash.FORKID)

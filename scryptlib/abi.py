@@ -72,7 +72,8 @@ class ABICoder:
             param_regex = re.compile(escape_str_for_regex('<{}>'.format(param['name'])))
             if param['state']:
                 # State variables need only a placeholder value as they will get replaced during script execution.
-                finalized_hex_script = re.sub(param_regex, '0100', finalized_hex_script)
+                #finalized_hex_script = re.sub(param_regex, '0100', finalized_hex_script)
+                finalized_hex_script = re.sub(param_regex, self.encode_param(_args[idx], param), finalized_hex_script)
             else:
                 finalized_hex_script = re.sub(param_regex, self.encode_param(_args[idx], param), finalized_hex_script)
 
@@ -91,11 +92,17 @@ class ABICoder:
         #return FunctionCall('constructor', args, contract, locking_script=locking_script)
 
 
-    def get_ls_data_part(self, contract, custom_vals_dict=None):
+    def get_ls_data_part(self, contract, custom_vals_dict=None, first_call=None):
         abi_constructor = self.abi_constructor()
         c_params = abi_constructor.get('params', [])
 
         state_buff = []
+
+        first_call = first_call if first_call is not None else contract.first_call
+        if first_call:
+            state_buff.append('01')
+        else:
+            state_buff.append('00')
 
         for param in c_params:
             if not param['state']:
@@ -228,6 +235,7 @@ class FunctionCall:
             raise Exception('Binding unlocking_script can\'t be empty.')
 
         self.contract = contract
+        self.locking_script = contract.locking_script
         self.unlocking_script = unlocking_script
         self.method_name = method_name
 
@@ -242,19 +250,31 @@ class FunctionCall:
                         'value': params[idx]
                         })
 
-    def verify(self, tx_input_context=utils.create_dummy_input_context(), interpreter_limits=None,
-            use_contract_script_pair=True):
+    def create_input_context(self):
+        context = utils.create_dummy_input_context()
+        self._set_ulscript(context)
+
+        # Set utxo script to verify sciptSig against.
+        context.utxo.script_pubkey = self.locking_script
+
+        return context
+
+    def _set_ulscript(self, context):
+        # Set unlock script for passed input context.
+        input_index = context.input_index
+        context.tx.inputs[input_index].script_sig = self.unlocking_script
+
+    def verify(self, tx_input_context=None, interpreter_limits=None, custom_locking_script=None):
         '''
         Evaluate lock and unlock script pair using the passed TxInputContext object.
         Additionally an InterpreterLimits object can be passed to limit the scope of verification.
 
-        If not TxInputContext object is passed, a dummy context object gets created and used in the verification 
+        If no TxInputContext object is passed, a dummy context object is used in the verification 
         process.
 
-        If use_contract_script_pair is set to True (defaults to True), then evaluate the scriptPubKey and scriptSig
-        pair of the contract object, instead of the ones passed via the TxInputContext object.
+        The custom_locking_script parameter can be used to pass a bitcoinx.Script object, that will be used within
+        the script evaluation instead of the contract objects locking script.
         '''
-        assert isinstance(tx_input_context, TxInputContext)
 
         if not self.unlocking_script:
             raise Exception('Cannot verify function "{}". \
@@ -269,29 +289,22 @@ class FunctionCall:
             ]
             interpreter_limits = InterpreterLimits(policies[1], is_genesis_enabled=True, is_consensus=True, base_flags='consensus')
 
+        if not tx_input_context:
+            context = self.create_input_context()
+        else:
+            context = tx_input_context
+
         # Make a deep copy of the passed TxInputContext object, because it may be modified from here on.
-        tx_input_context = copy.deepcopy(tx_input_context)
+        context = copy.deepcopy(context)
 
-        if use_contract_script_pair:
-            self.update_input_context_scripts(tx_input_context)
+        # Set custom ls if passed.
+        ls = custom_locking_script if custom_locking_script else self.locking_script
+        context.utxo.script_pubkey = ls
 
-        return tx_input_context.verify_input(interpreter_limits)
+        self._set_ulscript(context)
 
-    def update_input_context_scripts(self, tx_input_context):
-        '''
-        Updates the unlocking input script (scriptSig) and the matching UTXOs locking script (scriptPubKey)
-        to the unlocking script of this FunctionCall object and the locking script of the contract object it belongs to.
+        return context.verify_input(interpreter_limits)
 
-        Notice, that the function doesn't create a copy of the context object, but rather just modifies it.
-        '''
-        # Set unlock script for passed input context.
-        input_index = tx_input_context.input_index
-        tx_input_context.tx.inputs[input_index].script_sig = self.unlocking_script
-
-        # Set utxo script to verify sciptSig against.
-        tx_input_context.utxo.script_pubkey = self.contract.locking_script
-
-        return tx_input_context
 
     @property
     def script(self):

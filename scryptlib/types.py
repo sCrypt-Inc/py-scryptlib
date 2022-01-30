@@ -225,6 +225,11 @@ class Ripemd160(ScryptType):
         return (Script() << self.value).to_hex()
 
 
+class PubKeyHash(Ripemd160):
+
+    type_str = 'PubKeyHash'
+
+
 class Sha1(ScryptType):
 
     type_str = 'Sha1'
@@ -574,6 +579,7 @@ BASIC_SCRYPT_TYPES = {
         'PrivKey': PrivKey,
         'Sig': Sig,
         'Ripemd160': Ripemd160,
+        'PubKeyHash': PubKeyHash,
         'Sha1': Sha1,
         'Sha256': Sha256,
         'SigHashType': SigHashType,

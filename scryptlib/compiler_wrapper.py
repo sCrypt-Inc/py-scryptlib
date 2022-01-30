@@ -506,19 +506,31 @@ class CompilerWrapper:
     def get_constructor_declaration(contract):
         constructor = contract['constructor']   # Explicit constructor
         properties = contract['properties']     # Implicit constructor
+
+        prop_objs = dict()
+        if properties:
+            for prop in properties:
+                p_name = prop['name'].replace('this.', '')
+                p_type = prop['type']
+                p_state = prop['state']
+                prop_objs[p_name] = { 'name': p_name, 'type': p_type, 'state': p_state }
+
         params = []
         if constructor:
             for param in constructor['params']:
                 p_name = param['name']
                 p_type = param['type']
                 p_state = False
+
+                if p_name in prop_objs:
+                    p_state = prop_objs[p_name]['state']
+
                 params.append({ 'name': p_name, 'type': p_type, 'state': p_state })
         elif properties:
             for prop in properties:
                 p_name = prop['name'].replace('this.', '')
-                p_type = prop['type']
-                p_state = prop['state']
-                params.append({ 'name': p_name, 'type': p_type, 'state': p_state })
+                params.append(prop_objs[p_name])
+
         return {'type': 'constructor', 'params': params}
 
     @staticmethod

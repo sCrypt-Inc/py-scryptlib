@@ -40,7 +40,7 @@ class ContractBase:
             return self._manual_data_part
         return self.abi_coder.get_ls_data_part(self)
 
-    def get_state_script(self, vals_dict):
+    def get_state_script(self, vals_dict, first_call=False):
         '''
         Returns a locking script object with data part updated with values passed in  the vals_dict parameter.
         This doesn't update the actual contracts state variables values.
@@ -49,10 +49,14 @@ class ContractBase:
         ----------
         vals_dict: dict
             A dictionary with contracts statefull variable names as keys and values of according ScryptType or primitive type.
+        first_call: bool
+            A boolean value (defaults to False) that overrides the value of the first_call property in the data part of the LS.
+            This value needs to be True only in the initial instance (LS) of the contract. All subsequent contract calls / iterations must
+            have it set to False.
         '''
         ls = self._code_part
         ls = ls << OP_RETURN
-        return ls << self.abi_coder.get_ls_data_part(self, custom_vals_dict=vals_dict)
+        return ls << self.abi_coder.get_ls_data_part(self, custom_vals_dict=vals_dict, first_call=first_call)
 
     @staticmethod
     def find_src_info():
@@ -97,6 +101,7 @@ def build_contract_class(desc):
     contract_class_attribs['abi_coder'] = abi.ABICoder(desc['abi'], desc.get('alias', []))
     contract_class_attribs['file'] = desc['file']
     contract_class_attribs['structs'] = desc['structs']
+    contract_class_attribs['first_call'] = True
     for entity in desc['abi']:
         entity_type = entity['type']
         if entity_type == 'function':
@@ -107,6 +112,12 @@ def build_contract_class(desc):
 
             def func_call_handler(self, entity_name, *args):
                 call = contract_class_attribs['abi_coder'].encode_pub_function_call(self, entity_name, *args)
+
+                # Once a public function of the contract is called, first_call property gets set to False.
+                # It's important this get's set only after the FunctionCall object is created.
+                self.first_call = False
+
+                # Set the FunctionCall object as property on the contract object.
                 self.calls[entity_name] = call
                 return call
 

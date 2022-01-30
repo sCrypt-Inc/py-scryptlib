@@ -4,6 +4,10 @@ contract StateCounter {
     @state
     int counter;
 
+    //constructor(int counter) {
+    //    this.counter = counter;
+    //}
+
     public function unlock(SigHashPreimage txPreimage, int amount) {
         require(Tx.checkPreimage(txPreimage));
         // increment counter

@@ -23,6 +23,7 @@ contract Token {
         // only between two holders
         require(sender == this.accounts[0].pubKey && receiver == this.accounts[1].pubKey || sender == this.accounts[1].pubKey && receiver == this.accounts[0].pubKey);
 
+
         // transfer
         if (sender == this.accounts[0].pubKey) {
             require(this.accounts[0].balance >= value);
