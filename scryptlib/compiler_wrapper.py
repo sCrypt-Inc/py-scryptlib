@@ -285,8 +285,10 @@ class CompilerWrapper:
         asm_items = []
         for output in asm_obj['output']:
             if not self.debug:
-                asm_items.append({ 'opcode': output['opcode'] })
-                asm_items.append({ 'hex': output['hex'] })
+                asm_items.append({ 
+                    'opcode': output['opcode'],
+                    'hex': output['hex']
+                    })
                 continue
             
             match = re.match(SOURCE_REG, output['src'])

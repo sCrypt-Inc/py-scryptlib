@@ -9,7 +9,7 @@ import bitcoinx
 
 contract = './test/res/matrix.scrypt'
 
-compiler_result = scryptlib.utils.compile_contract(contract)
+compiler_result = scryptlib.utils.compile_contract(contract, debug=False)
 desc = compiler_result.to_desc()
 
 Matrix = scryptlib.contract.build_contract_class(desc)

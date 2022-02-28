@@ -44,7 +44,8 @@ def compile_contract(contract, out_dir=None, compiler_bin=None, from_string=Fals
 
     cw = compiler_wrapper.CompilerWrapper(
             debug=debug,
-            stack=True,
+            stack=debug,
+            optimize=not debug,
             out_dir=out_dir,
             compiler_bin=compiler_bin
             )
