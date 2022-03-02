@@ -17,7 +17,13 @@ import scryptlib.types as types
 import scryptlib.serializer as serializer
 
 
-def compile_contract(contract, out_dir=None, compiler_bin=None, from_string=False, debug=True):
+def compile_contract(
+        contract,
+        out_dir=None,
+        compiler_bin=None,
+        from_string=False,
+        debug=True
+        ):
     '''
     Compile sCrypt contract from a file or a string object. Returns instance of class
     CompilerResult if the compilation was successfull.

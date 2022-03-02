@@ -145,7 +145,7 @@ class CompilerWrapper:
                  debug = True,
                  optimize = False,
                  stack = True,
-                 timeout = 1200,
+                 timeout = None,  # seconds
                  cmd_args = None,
                  cwd = Path('.')):
         self.out_dir = Path(out_dir)
