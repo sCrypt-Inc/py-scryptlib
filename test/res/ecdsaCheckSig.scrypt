@@ -1,0 +1,21 @@
+import "ecArithmeticOptimized.scrypt"
+
+contract TestCheckSig {
+
+    public function testAdd(Point a, Point b, Point sum) {
+       require(ECDSA.addPoints(a, b) == sum);
+    }
+
+    public function testDouble(Point a, Point d) {
+       require(ECDSA.doublePoint(a) == d);
+    }
+
+    public function testMultByScalar(Point p, int scalar, Point res) {
+       require(ECDSA.multByScalar(p, scalar) == res);
+    }
+
+    public function testVerifySig(bytes m, Signature sig, Point pubKey) {
+        require(ECDSA.verifySig(m, sig, pubKey) == true);
+    }
+
+}
