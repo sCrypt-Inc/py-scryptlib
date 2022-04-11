@@ -3,7 +3,7 @@ import json
 
 from bitcoinx import PrivateKey, double_sha256, Signature
 from scryptlib import (
-        compile_contract, build_contract_class, build_type_classes, Sig
+        build_contract_class, build_type_classes
         )
 
 
@@ -37,13 +37,13 @@ s = Signature.s_value(sig)
 ############################
 #################### sCrypt
 
-contract = './test/res/ecdsaChecksig.scrypt' 
+contract = './test/res/secp256k1.scrypt' 
 
 #compiler_result = compile_contract(contract, debug=False)
 #desc = compiler_result.to_desc()
 
 # Load desc instead:
-with gzip.open('./test/res/desc/ecdsaChecksig_desc.json.gz', 'r') as f:
+with gzip.open('./test/res/desc/secp256k1_desc.json.gz', 'r') as f:
     desc = json.load(f)
 
 type_classes = build_type_classes(desc)
