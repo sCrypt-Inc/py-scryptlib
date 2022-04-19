@@ -1,0 +1,29 @@
+import "ecVerify.scrypt";
+
+// Schnorr signatures verification for secp256k1
+contract Schnorr {
+    public function verify(Sig sig, PubKey pubKey, bytes msg, int lambda,
+        Point R, PointMulAux rAux,
+        Point E, PointMulAux eAux,
+        Point S, PointMulAux sAux) {
+
+        int r = unpack(sig[ : 32]);
+        int s = unpack(sig[32 : 64]);
+
+        // R = r * G
+        require(ECVerify.isMul(ECVerify.G, r, R, rAux));
+
+        // e = Hash(r || P || msg)
+        int e = unpack(sha256(pack(r) + pubKey + msg));
+
+        // E = e * P
+        Point P = ECVerify.pubKey2Point(pubKey);
+        require(ECVerify.isMul(P, e, E, eAux));
+
+        // S = s * G
+        require(ECVerify.isMul(ECVerify.G, s, S, sAux));
+
+        // S == R + H?
+        require(ECVerify.isSum(R, E, lambda, S));
+    }
+}

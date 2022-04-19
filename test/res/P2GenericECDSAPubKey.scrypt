@@ -1,7 +1,7 @@
-import "ecArithmeticOptimized.scrypt";
+import "ec.scrypt";
 
 
-contract P2PK {
+contract P2GPK {
 
     Point pk;
 

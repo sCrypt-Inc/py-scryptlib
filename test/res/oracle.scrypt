@@ -1,0 +1,26 @@
+import "ecVerify.scrypt";
+
+// an oracle library signing any data using ECDSA
+library Oracle {
+
+    // verify data is signed by the oracle with given public key
+    static function verifyData(bytes data, Sig sig, PubKey oraclePubKey, PubKey derivedOraclePubKey, PubKey X,
+        int lambda, SigHashPreimage txPreimage) : bool {
+        // sha256 data
+        bytes hash = sha256(data);
+
+        // We interpret hash as little endian, even though it's big endian.
+        // This does not matter as long as it is converted to a 256-bit integer. We do not change endian to save script size
+        PrivKey x = PrivKey(Utils.fromLEUnsigned(hash));
+
+        // verify X = x * G?
+        require(Tx.checkPreimageAdvanced(txPreimage, x, X, Tx.invK, Tx.r, Tx.rBigEndian, SigHashType(SigHash.NONE | SigHash.FORKID)));
+
+        // verify P' = P + X
+        require(ECVerify.isPubKeySum(oraclePubKey, X, lambda, derivedOraclePubKey));
+
+        // verify signature is from oracle, who knows p' = p + x
+        return checkSig(sig, derivedOraclePubKey);
+
+    }
+}
