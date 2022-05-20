@@ -50,7 +50,6 @@ def compile_contract(
 
     cw = compiler_wrapper.CompilerWrapper(
             debug=debug,
-            stack=debug,
             optimize=not debug,
             out_dir=out_dir,
             compiler_bin=compiler_bin

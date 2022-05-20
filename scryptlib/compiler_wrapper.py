@@ -144,7 +144,6 @@ class CompilerWrapper:
                  compiler_bin,
                  debug = True,
                  optimize = False,
-                 stack = True,
                  timeout = None,  # seconds
                  cmd_args = None,
                  cwd = Path('.')):
@@ -153,7 +152,6 @@ class CompilerWrapper:
         self.asm = True     # TODO: Are asm, ast, desc flags even needed?
         self.hex_out = True
         self.debug = debug
-        self.stack = stack
         self.optimize = optimize
         self.ast = True
         self.desc = True
@@ -238,8 +236,6 @@ class CompilerWrapper:
             cmd_buff.append('--ast')
         if self.debug:
             cmd_buff.append('--debug')
-        if self.stack:
-            cmd_buff.append('--stack')
                     
         if self.optimize:
             cmd_buff.append('--optimize')
@@ -306,7 +302,7 @@ class CompilerWrapper:
                         debug_tag = DebugModeTag.LOOP_START
 
                 pos = None
-                if file_idx != -1 and len(sources) > file_idx:
+                if file_idx >= 0 and len(sources) > file_idx:
                     pos = {
                         'file': sources_fullpath[file_idx],
                         'line': int(match.group('line')),
@@ -318,7 +314,6 @@ class CompilerWrapper:
                 asm_items.append({
                     'opcode': output['opcode'],
                     'hex': output['hex'],
-                    'stack': output['stack'],
                     'pos': pos,
                     'debugTag': debug_tag
                     })
