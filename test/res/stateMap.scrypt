@@ -13,7 +13,7 @@ contract StateMap {
     public function insert(MapEntry entry, SigHashPreimage preimage) {
         require(Tx.checkPreimage(preimage));
         HashedMap<int, int> map = new HashedMap(this._mpData);
-        require(map.set(entry.key, entry.val, entry.keyIndex));
+        require(map.set({entry.key, entry.keyIndex}, entry.val));
         require(this.passMap(map.data(), preimage));
     }
 
@@ -21,7 +21,7 @@ contract StateMap {
     public function update(MapEntry entry, SigHashPreimage preimage) {
         require(Tx.checkPreimage(preimage));
         HashedMap<int, int> map = new HashedMap(this._mpData);
-        require(map.set(entry.key, entry.val, entry.keyIndex));
+        require(map.set({entry.key, entry.keyIndex}, entry.val));
         require(this.passMap(map.data(), preimage));
     }
 
@@ -29,7 +29,7 @@ contract StateMap {
     public function delete(int key, int keyIndex, SigHashPreimage preimage) {
         require(Tx.checkPreimage(preimage));
         HashedMap<int, int> map = new HashedMap(this._mpData);
-        require(map.delete(key, keyIndex));
+        require(map.delete({key, keyIndex}));
         // Serialize map, update state
         require(this.passMap(map.data(), preimage));
     }
