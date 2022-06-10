@@ -1,5 +1,6 @@
 type Integer = int;
 type Name = bytes;
+type Species = bytes;
 type Age = Integer;
 type Address = bytes;
 
@@ -8,6 +9,12 @@ struct Person {
     Address addr;
     bool leftHanded;
     Age age;
+    Pet[2] pets;
+}
+
+struct Pet {
+    Name name;
+    Species species;
 }
 
 type Female = Person;
@@ -31,6 +38,8 @@ contract StructDemo {
         require(person1.leftHanded == this.person.leftHanded);
         require(person1.addr == this.person.addr);
         require(person1.age == this.person.age);
+
+        require(person1.pets == this.person.pets);
 
         this.person = this.incAge(person1);
         require(this.person.age == 34);
